@@ -1,0 +1,15 @@
+[Unit]
+Description=КалорийБот — Telegram бот для учёта питания
+After=network.target mongod.service
+
+[Service]
+Type=simple
+User=faima
+WorkingDirectory=/var/www/ccalorie_tracker
+ExecStart=/root/.local/bin/uv run python -m app.main
+Restart=always
+RestartSec=5
+EnvironmentFile=/var/www/ccalorie_tracker/.env
+
+[Install]
+WantedBy=multi-user.target

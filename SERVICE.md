@@ -1,4 +1,36 @@
-# КалорийБот — управление сервисом (macOS)
+# КалорийБот — управление сервисом
+
+---
+
+## Linux (systemd)
+
+### Установка
+
+```bash
+sudo cp calorybot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+### Управление
+
+```bash
+sudo systemctl start calorybot      # запуск
+sudo systemctl stop calorybot       # остановка
+sudo systemctl restart calorybot    # перезапуск
+sudo systemctl status calorybot     # статус
+sudo systemctl enable calorybot     # автозапуск при загрузке
+sudo systemctl disable calorybot    # отключить автозапуск
+```
+
+### Логи
+
+```bash
+journalctl -u calorybot -f          # логи в реальном времени
+```
+
+---
+
+## macOS (launchd)
 
 ## Запуск
 
