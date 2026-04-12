@@ -627,10 +627,6 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
                 diff = n.calories - bmr
                 total_deficit += diff
                 days_with_bmr += 1
-                if diff <= 0:
-                    line += f" | 📉 {diff:.0f}"
-                else:
-                    line += f" | 📈 +{diff:.0f}"
             lines.append(line)
             week_total.calories += n.calories
             week_total.protein += n.protein
@@ -650,11 +646,10 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
     )
 
     if days_with_bmr > 0:
-        avg_deficit = total_deficit / days_with_bmr
-        if avg_deficit <= 0:
-            text += f"\n\n📉 Средний дефицит: <b>{abs(avg_deficit):.0f}</b> ккал/день"
+        if total_deficit <= 0:
+            text += f"\n\n📉 Дефицит за неделю: <b>{abs(total_deficit):.0f}</b> ккал"
         else:
-            text += f"\n\n📈 Средний профицит: <b>{avg_deficit:.0f}</b> ккал/день"
+            text += f"\n\n📈 Профицит за неделю: <b>{total_deficit:.0f}</b> ккал"
 
     prev_week = (start - timedelta(days=7)).isoformat()
     next_week = (start + timedelta(days=7)).isoformat()
