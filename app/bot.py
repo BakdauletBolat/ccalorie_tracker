@@ -1,5 +1,5 @@
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -8,7 +8,7 @@ from aiogram import F
 from google.genai.errors import ClientError, ServerError
 
 from app.config import settings
-from app.database import clear_entries, delete_entry, get_entries, save_entry
+from app.database import clear_entries, delete_entry, get_entries, get_entries_range, save_entry
 from app.models import FoodEntry, NutritionData
 from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent
 
@@ -22,7 +22,10 @@ dp = Dispatcher()
 
 KEYBOARD = types.ReplyKeyboardMarkup(
     keyboard=[
-        [types.KeyboardButton(text="📋 История")],
+        [
+            types.KeyboardButton(text="🍽 Приёмы пищи"),
+            types.KeyboardButton(text="📊 Неделя"),
+        ],
     ],
     resize_keyboard=True,
 )
@@ -37,9 +40,9 @@ async def cmd_start(message: types.Message) -> None:
         "Я — КалорийБот 🍽\n"
         "Веду учёт твоего питания.\n\n"
         "Просто напиши что ты съел, например:\n"
-        "«Завтрак: овсянка и банан, 350 ккал, 12г белка»\n\n"
-        "📋 История — посмотреть записи за сегодня\n"
-        "🗑 Очистить — удалить записи за сегодня",
+        "«Овсянка и банан»\n\n"
+        "🍽 Приёмы пищи — записи за сегодня\n"
+        "📊 Неделя — отчёт за неделю",
         reply_markup=KEYBOARD,
     )
 
@@ -52,13 +55,14 @@ async def _show_history(message: types.Message, day: date | None = None) -> None
         await message.answer(f"Записей за {day.strftime('%d.%m.%Y')} нет.")
         return
 
+    day_str = day.isoformat()
     total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     buttons: list[list[types.InlineKeyboardButton]] = []
     for i, (entry_id, e) in enumerate(entries, 1):
         buttons.append([
             types.InlineKeyboardButton(
                 text=f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал",
-                callback_data=f"view:{entry_id}",
+                callback_data=f"view:{entry_id}:{day_str}",
             )
         ])
         total.calories += e.nutrition.calories
@@ -84,8 +88,11 @@ async def _show_history(message: types.Message, day: date | None = None) -> None
 
 @dp.callback_query(F.data.startswith("view:"))
 async def cb_view(callback: types.CallbackQuery) -> None:
-    entry_id = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
-    entries = await get_entries(callback.from_user.id, date.today())
+    # format: view:<entry_id>:<date>
+    parts = callback.data.split(":", 2)  # type: ignore[union-attr]
+    entry_id = parts[1]
+    day = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
+    entries = await get_entries(callback.from_user.id, day)
     entry: FoodEntry | None = None
     for eid, e in entries:
         if eid == entry_id:
@@ -104,9 +111,10 @@ async def cb_view(callback: types.CallbackQuery) -> None:
         f"🍞 Углеводы: {entry.nutrition.carbs:.0f} г\n\n"
         f"🕐 {entry.created_at.strftime('%H:%M')}"
     )
+    day_str = day.isoformat()
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
-        [types.InlineKeyboardButton(text="❌ Удалить", callback_data=f"del:{entry_id}")],
-        [types.InlineKeyboardButton(text="◀️ Назад", callback_data="back")],
+        [types.InlineKeyboardButton(text="❌ Удалить", callback_data=f"del:{entry_id}:{day_str}")],
+        [types.InlineKeyboardButton(text="◀️ Назад", callback_data=f"back:{day_str}")],
     ])
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")  # type: ignore[union-attr]
     await callback.answer()
@@ -114,40 +122,47 @@ async def cb_view(callback: types.CallbackQuery) -> None:
 
 @dp.callback_query(F.data.startswith("del:"))
 async def cb_delete(callback: types.CallbackQuery) -> None:
-    entry_id = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    # format: del:<entry_id>:<date>
+    parts = callback.data.split(":", 2)  # type: ignore[union-attr]
+    entry_id = parts[1]
+    day = date.fromisoformat(parts[2]) if len(parts) > 2 else date.today()
     deleted = await delete_entry(entry_id, callback.from_user.id)
     if not deleted:
         await callback.answer("Запись не найдена")
         return
 
     await callback.answer("Запись удалена")
-    # показываем обновлённую историю в том же сообщении
-    entries = await get_entries(callback.from_user.id, date.today())
+    entries = await get_entries(callback.from_user.id, day)
     if not entries:
-        await callback.message.edit_text("Сегодня записей нет.")  # type: ignore[union-attr]
+        label = "Сегодня" if day == date.today() else day.strftime('%d.%m.%Y')
+        await callback.message.edit_text(f"Записей за {label} нет.")  # type: ignore[union-attr]
         return
-    await _edit_history(callback.message, entries)  # type: ignore[arg-type]
+    await _edit_history(callback.message, entries, day)  # type: ignore[arg-type]
 
 
-@dp.callback_query(F.data == "back")
+@dp.callback_query(F.data.startswith("back:"))
 async def cb_back(callback: types.CallbackQuery) -> None:
-    entries = await get_entries(callback.from_user.id, date.today())
+    day_str = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    day = date.fromisoformat(day_str)
+    entries = await get_entries(callback.from_user.id, day)
     if not entries:
-        await callback.message.edit_text("Сегодня записей нет.")  # type: ignore[union-attr]
+        label = "Сегодня" if day == date.today() else day.strftime('%d.%m.%Y')
+        await callback.message.edit_text(f"Записей за {label} нет.")  # type: ignore[union-attr]
         await callback.answer()
         return
-    await _edit_history(callback.message, entries)  # type: ignore[arg-type]
+    await _edit_history(callback.message, entries, day)  # type: ignore[arg-type]
     await callback.answer()
 
 
-async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEntry]]) -> None:
+async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEntry]], day: date) -> None:
+    day_str = day.isoformat()
     total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     buttons: list[list[types.InlineKeyboardButton]] = []
     for i, (entry_id, e) in enumerate(entries, 1):
         buttons.append([
             types.InlineKeyboardButton(
                 text=f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал",
-                callback_data=f"view:{entry_id}",
+                callback_data=f"view:{entry_id}:{day_str}",
             )
         ])
         total.calories += e.nutrition.calories
@@ -155,8 +170,9 @@ async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEnt
         total.fat += e.nutrition.fat
         total.carbs += e.nutrition.carbs
 
+    label = "Сегодня" if day == date.today() else day.strftime('%d.%m.%Y')
     text = (
-        f"📅 <b>{date.today().strftime('%d.%m.%Y')}</b>\n\n"
+        f"📅 <b>{label}</b>\n\n"
         f"🔥 Калории: <b>{total.calories:.0f}</b> ккал\n"
         f"🥩 Белки: <b>{total.protein:.0f}</b> г\n"
         f"🧈 Жиры: <b>{total.fat:.0f}</b> г\n"
@@ -184,14 +200,91 @@ async def cmd_history(message: types.Message) -> None:
     await _show_history(message)
 
 
-@dp.message(F.text == "📋 История")
-async def btn_history(message: types.Message) -> None:
+@dp.message(F.text == "🍽 Приёмы пищи")
+async def btn_today(message: types.Message) -> None:
     await _show_history(message)
 
 
 @dp.message(Command("clear"))
 async def cmd_clear(message: types.Message) -> None:
     await _do_clear(message)
+
+
+def _week_bounds(ref: date) -> tuple[date, date]:
+    start = ref - timedelta(days=ref.weekday())  # Monday
+    end = start + timedelta(days=6)  # Sunday
+    return start, end
+
+
+WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+
+
+async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.InlineKeyboardMarkup]:
+    start, end = _week_bounds(ref)
+    entries = await get_entries_range(user_id, start, end)
+
+    # Group by day
+    daily: dict[date, NutritionData] = {}
+    for _, e in entries:
+        day = e.created_at.date()
+        if day not in daily:
+            daily[day] = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+        daily[day].calories += e.nutrition.calories
+        daily[day].protein += e.nutrition.protein
+        daily[day].fat += e.nutrition.fat
+        daily[day].carbs += e.nutrition.carbs
+
+    lines: list[str] = []
+    week_total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    for i in range(7):
+        day = start + timedelta(days=i)
+        label = f"{WEEKDAYS[i]} {day.strftime('%d.%m')}"
+        if day == date.today():
+            label = f"<b>{label} (сегодня)</b>"
+        n = daily.get(day)
+        if n:
+            lines.append(
+                f"{label} — {n.calories:.0f} ккал | "
+                f"{n.protein:.0f}Б {n.fat:.0f}Ж {n.carbs:.0f}У"
+            )
+            week_total.calories += n.calories
+            week_total.protein += n.protein
+            week_total.fat += n.fat
+            week_total.carbs += n.carbs
+        else:
+            lines.append(f"{label} — нет записей")
+
+    text = (
+        f"📊 <b>Неделя {start.strftime('%d.%m')} – {end.strftime('%d.%m.%Y')}</b>\n\n"
+        + "\n".join(lines)
+        + f"\n\n<b>Итого за неделю:</b>\n"
+        f"🔥 {week_total.calories:.0f} ккал | "
+        f"🥩 {week_total.protein:.0f} Б | "
+        f"🧈 {week_total.fat:.0f} Ж | "
+        f"🍞 {week_total.carbs:.0f} У"
+    )
+
+    prev_week = (start - timedelta(days=7)).isoformat()
+    next_week = (start + timedelta(days=7)).isoformat()
+    buttons: list[list[types.InlineKeyboardButton]] = [[
+        types.InlineKeyboardButton(text="◀️ Назад", callback_data=f"week:{prev_week}"),
+        types.InlineKeyboardButton(text="Вперёд ▶️", callback_data=f"week:{next_week}"),
+    ]]
+    return text, types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@dp.message(F.text == "📊 Неделя")
+async def btn_week(message: types.Message) -> None:
+    text, keyboard = await _build_week_report(message.from_user.id, date.today())  # type: ignore[union-attr]
+    await message.answer(text, reply_markup=keyboard, parse_mode="HTML")
+
+
+@dp.callback_query(F.data.startswith("week:"))
+async def cb_week(callback: types.CallbackQuery) -> None:
+    ref = date.fromisoformat(callback.data.split(":", 1)[1])  # type: ignore[union-attr]
+    text, keyboard = await _build_week_report(callback.from_user.id, ref)
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")  # type: ignore[union-attr]
+    await callback.answer()
 
 
 def _build_pending_text(entries: list[FoodEntry]) -> str:
