@@ -109,13 +109,16 @@ CONTEXT_PROMPT = (
 class ParsedWorkout(BaseModel):
     description: str
     calories: float
+    date: str  # YYYY-MM-DD
 
 
 WORKOUT_PROMPT = (
     "Пользователь описал тренировку или сколько калорий сжёг. Извлеки:\n"
     "- description: краткое описание тренировки\n"
-    "- calories: сколько калорий сожжено (ккал)\n\n"
+    "- calories: сколько калорий сожжено (ккал)\n"
+    "- date: дата тренировки в формате YYYY-MM-DD. Если дата не указана, используй сегодняшнюю.\n\n"
     "Если калории не указаны, оцени приблизительно по типу активности.\n"
+    "Сегодня: {today}.\n"
     "Текст пользователя:\n"
 )
 
@@ -128,7 +131,7 @@ async def parse_workout_text(text: str) -> ParsedWorkout:
     logger.info("Парсинг тренировки: %s", text)
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=WORKOUT_PROMPT + text,
+        contents=WORKOUT_PROMPT.format(today=date.today().isoformat()) + text,
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedWorkout,

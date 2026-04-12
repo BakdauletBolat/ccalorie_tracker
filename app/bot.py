@@ -870,7 +870,7 @@ async def handle_food(message: types.Message) -> None:
             logger.warning("Gemini ошибка для user=%s", user_id)
             await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
             return
-        workout_day = date.fromisoformat(intent.date) if intent.date else date.today()
+        workout_day = date.fromisoformat(parsed.date)
         entry = WorkoutEntry(
             user_id=user_id,
             calories=parsed.calories,
