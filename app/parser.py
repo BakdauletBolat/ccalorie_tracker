@@ -25,7 +25,7 @@ PROMPT = (
 
 
 class ParsedIntent(BaseModel):
-    intent: str  # "food", "history", "other"
+    intent: str  # "food", "history", "workout", "other"
     date: str | None = None
 
 
@@ -35,7 +35,10 @@ INTENT_PROMPT = (
     "(например: 'что я ел вчера', 'покажи за 5 апреля'). "
     "Укажи date в формате YYYY-MM-DD.\n"
     '- intent="food" — пользователь описывает что он ел или пил.\n'
-    '- intent="other" — всё остальное, не связано с едой и историей.\n\n'
+    '- intent="workout" — пользователь описывает тренировку или сколько калорий сжёг '
+    "(например: 'сжёг 500 ккал', 'пробежал 5 км', 'тренировка 1 час'). "
+    "Укажи date в формате YYYY-MM-DD если указана дата.\n"
+    '- intent="other" — всё остальное, не связано с едой, историей и тренировками.\n\n'
     "Сегодня: {today}.\n"
     "Текст пользователя:\n"
 )
@@ -103,8 +106,37 @@ CONTEXT_PROMPT = (
 )
 
 
+class ParsedWorkout(BaseModel):
+    description: str
+    calories: float
+
+
+WORKOUT_PROMPT = (
+    "Пользователь описал тренировку или сколько калорий сжёг. Извлеки:\n"
+    "- description: краткое описание тренировки\n"
+    "- calories: сколько калорий сожжено (ккал)\n\n"
+    "Если калории не указаны, оцени приблизительно по типу активности.\n"
+    "Текст пользователя:\n"
+)
+
+
 class ParsedFoodList(BaseModel):
     items: list[ParsedFood]
+
+
+async def parse_workout_text(text: str) -> ParsedWorkout:
+    logger.info("Парсинг тренировки: %s", text)
+    response = await _client.aio.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents=WORKOUT_PROMPT + text,
+        config=genai.types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=ParsedWorkout,
+        ),
+    )
+    result = ParsedWorkout.model_validate_json(response.text)
+    logger.info("Тренировка результат: %s", result.model_dump())
+    return result
 
 
 async def parse_food_with_context(text: str, current_items: list[str]) -> list[ParsedFood]:

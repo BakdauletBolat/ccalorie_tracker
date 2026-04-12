@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from bson import ObjectId
 
 from app.config import settings
-from app.models import DailyProfileSnapshot, FoodEntry, UserProfile
+from app.models import DailyProfileSnapshot, FoodEntry, UserProfile, WorkoutEntry
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,51 @@ async def clear_entries(user_id: int, day: date) -> int:
     })
     logger.info("Удалено %d записей для user=%s за %s", result.deleted_count, user_id, day)
     return int(result.deleted_count)
+
+
+# ── Workouts ─────────────────────────────────────────────
+
+
+async def save_workout(entry: WorkoutEntry) -> str:
+    db = get_db()
+    result = await db.workouts.insert_one(entry.model_dump())
+    entry_id = str(result.inserted_id)
+    logger.info("Тренировка id=%s user=%s: %s %.0f ккал", entry_id, entry.user_id, entry.description, entry.calories)
+    return entry_id
+
+
+async def get_workouts(user_id: int, day: date) -> list[tuple[str, WorkoutEntry]]:
+    db = get_db()
+    start = datetime.combine(day, time.min)
+    end = datetime.combine(day, time.max)
+    cursor = db.workouts.find({
+        "user_id": user_id,
+        "created_at": {"$gte": start, "$lte": end},
+    })
+    entries = [(str(doc["_id"]), WorkoutEntry(**doc)) async for doc in cursor]
+    return entries
+
+
+async def get_workouts_range(
+    user_id: int, start_day: date, end_day: date,
+) -> list[tuple[str, WorkoutEntry]]:
+    db = get_db()
+    start = datetime.combine(start_day, time.min)
+    end = datetime.combine(end_day, time.max)
+    cursor = db.workouts.find({
+        "user_id": user_id,
+        "created_at": {"$gte": start, "$lte": end},
+    })
+    return [(str(doc["_id"]), WorkoutEntry(**doc)) async for doc in cursor]
+
+
+async def delete_workout(entry_id: str, user_id: int) -> bool:
+    db = get_db()
+    result = await db.workouts.delete_one({
+        "_id": ObjectId(entry_id),
+        "user_id": user_id,
+    })
+    return result.deleted_count > 0
 
 
 # ── Profile ──────────────────────────────────────────────

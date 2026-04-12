@@ -20,12 +20,15 @@ from app.database import (
     get_entries_range,
     get_user_active_days,
     get_user_profile,
+    get_workouts,
+    get_workouts_range,
     save_entry,
+    save_workout,
     upsert_daily_snapshot,
     upsert_user_profile,
 )
-from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, UserProfile
-from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent
+from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, UserProfile, WorkoutEntry
+from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent, parse_workout_text
 
 logger = logging.getLogger(__name__)
 
@@ -422,11 +425,17 @@ async def _show_history(message: types.Message, day: date | None = None) -> None
         profile = await get_user_profile(message.from_user.id)  # type: ignore[union-attr]
         if profile:
             bmr = calc_bmr(snapshot.weight, snapshot.height, snapshot.age, profile.gender)
-            diff = total.calories - bmr
+            workouts = await get_workouts(message.from_user.id, day)  # type: ignore[union-attr]
+            burned = sum(w.calories for _, w in workouts)
+            total_expenditure = bmr + burned
+            diff = total.calories - total_expenditure
+            text += f"\n🎯 BMR: {bmr:.0f} ккал"
+            if burned > 0:
+                text += f"\n🏋️ Сожжено: {burned:.0f} ккал"
             if diff <= 0:
-                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
+                text += f"\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
             else:
-                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
+                text += f"\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
 
     text += f"\n\nЗаписей: {len(entries)} — нажми чтобы посмотреть подробнее:"
     await message.answer(
@@ -534,11 +543,17 @@ async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEnt
         profile = await get_user_profile(user_id)
         if profile:
             bmr = calc_bmr(snapshot.weight, snapshot.height, snapshot.age, profile.gender)
-            diff = total.calories - bmr
+            workouts = await get_workouts(user_id, day)
+            burned = sum(w.calories for _, w in workouts)
+            total_expenditure = bmr + burned
+            diff = total.calories - total_expenditure
+            text += f"\n🎯 BMR: {bmr:.0f} ккал"
+            if burned > 0:
+                text += f"\n🏋️ Сожжено: {burned:.0f} ккал"
             if diff <= 0:
-                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
+                text += f"\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
             else:
-                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
+                text += f"\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
 
     text += f"\n\nЗаписей: {len(entries)} — нажми чтобы посмотреть подробнее:"
     await message.edit_text(
@@ -584,6 +599,7 @@ WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.InlineKeyboardMarkup]:
     start, end = _week_bounds(ref)
     entries = await get_entries_range(user_id, start, end)
+    workout_entries = await get_workouts_range(user_id, start, end)
     profile = await get_user_profile(user_id)
 
     # Group by day
@@ -597,6 +613,12 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
         daily[day].fat += e.nutrition.fat
         daily[day].carbs += e.nutrition.carbs
 
+    # Group workouts by day
+    daily_burned: dict[date, float] = {}
+    for _, w in workout_entries:
+        day = w.created_at.date()
+        daily_burned[day] = daily_burned.get(day, 0) + w.calories
+
     # Собираем снимки для дней с записями (для BMR)
     snapshots: dict[date, DailyProfileSnapshot] = {}
     if profile:
@@ -608,6 +630,7 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
     lines: list[str] = []
     week_total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     total_deficit = 0.0
+    total_burned = 0.0
     days_with_bmr = 0
 
     for i in range(7):
@@ -624,7 +647,9 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
             snap = snapshots.get(day)
             if snap and profile:
                 bmr = calc_bmr(snap.weight, snap.height, snap.age, profile.gender)
-                diff = n.calories - bmr
+                burned = daily_burned.get(day, 0)
+                total_burned += burned
+                diff = n.calories - (bmr + burned)
                 total_deficit += diff
                 days_with_bmr += 1
             lines.append(line)
@@ -645,11 +670,14 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
         f"🍞 {week_total.carbs:.0f} У"
     )
 
+    if total_burned > 0:
+        text += f"\n🏋️ Сожжено: {total_burned:.0f} ккал"
+
     if days_with_bmr > 0:
         if total_deficit <= 0:
-            text += f"\n\n📉 Дефицит за неделю: <b>{abs(total_deficit):.0f}</b> ккал"
+            text += f"\n📉 Дефицит за неделю: <b>{abs(total_deficit):.0f}</b> ккал"
         else:
-            text += f"\n\n📈 Профицит за неделю: <b>{total_deficit:.0f}</b> ккал"
+            text += f"\n📈 Профицит за неделю: <b>{total_deficit:.0f}</b> ккал"
 
     prev_week = (start - timedelta(days=7)).isoformat()
     next_week = (start + timedelta(days=7)).isoformat()
@@ -832,6 +860,31 @@ async def handle_food(message: types.Message) -> None:
     if intent.intent == "history":
         day = date.fromisoformat(intent.date) if intent.date else date.today()
         await _show_history(message, day)
+        return
+
+    if intent.intent == "workout":
+        await message.answer("Обрабатываю тренировку...")
+        try:
+            parsed = await parse_workout_text(message.text)
+        except (ServerError, ClientError):
+            logger.warning("Gemini ошибка для user=%s", user_id)
+            await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
+            return
+        workout_day = date.fromisoformat(intent.date) if intent.date else date.today()
+        entry = WorkoutEntry(
+            user_id=user_id,
+            calories=parsed.calories,
+            description=parsed.description,
+            created_at=datetime.combine(workout_day, datetime.now().time()),
+        )
+        await save_workout(entry)
+        logger.info("user=%s тренировка: %s %.0f ккал", user_id, entry.description, entry.calories)
+        await message.answer(
+            f"🏋️ <b>Тренировка записана!</b>\n\n"
+            f"💪 {entry.description}\n"
+            f"🔥 Сожжено: <b>{entry.calories:.0f}</b> ккал",
+            parse_mode="HTML",
+        )
         return
 
     if intent.intent == "other":

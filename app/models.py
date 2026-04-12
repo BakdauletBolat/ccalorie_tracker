@@ -31,3 +31,10 @@ class DailyProfileSnapshot(BaseModel):
     height: float
     age: int
     date: date
+
+
+class WorkoutEntry(BaseModel):
+    user_id: int
+    calories: float
+    description: str
+    created_at: datetime
