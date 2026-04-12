@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from bson import ObjectId
 
 from app.config import settings
-from app.models import FoodEntry
+from app.models import DailyProfileSnapshot, FoodEntry, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -92,3 +92,76 @@ async def clear_entries(user_id: int, day: date) -> int:
     })
     logger.info("Удалено %d записей для user=%s за %s", result.deleted_count, user_id, day)
     return int(result.deleted_count)
+
+
+# ── Profile ──────────────────────────────────────────────
+
+
+async def upsert_user_profile(profile: UserProfile) -> None:
+    db = get_db()
+    await db.users.update_one(
+        {"user_id": profile.user_id},
+        {"$set": profile.model_dump()},
+        upsert=True,
+    )
+    logger.info("Профиль сохранён для user=%s", profile.user_id)
+
+
+async def get_user_profile(user_id: int) -> UserProfile | None:
+    db = get_db()
+    doc = await db.users.find_one({"user_id": user_id})
+    if not doc:
+        return None
+    return UserProfile(**doc)
+
+
+async def upsert_daily_snapshot(snapshot: DailyProfileSnapshot) -> None:
+    db = get_db()
+    await db.daily_profiles.update_one(
+        {"user_id": snapshot.user_id, "date": snapshot.date.isoformat()},
+        {"$set": {**snapshot.model_dump(), "date": snapshot.date.isoformat()}},
+        upsert=True,
+    )
+    logger.info("Снимок сохранён для user=%s за %s", snapshot.user_id, snapshot.date)
+
+
+async def get_daily_snapshot(user_id: int, day: date) -> DailyProfileSnapshot | None:
+    db = get_db()
+    doc = await db.daily_profiles.find_one(
+        {"user_id": user_id, "date": day.isoformat()},
+    )
+    if not doc:
+        return None
+    doc["date"] = date.fromisoformat(doc["date"])
+    return DailyProfileSnapshot(**doc)
+
+
+async def get_user_active_days(user_id: int) -> list[date]:
+    db = get_db()
+    pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$created_at"}}}},
+        {"$sort": {"_id": 1}},
+    ]
+    days: list[date] = []
+    async for doc in db.food_entries.aggregate(pipeline):
+        days.append(date.fromisoformat(doc["_id"]))
+    return days
+
+
+async def bulk_create_daily_snapshots(snapshots: list[DailyProfileSnapshot]) -> int:
+    if not snapshots:
+        return 0
+    db = get_db()
+    ops = []
+    from pymongo import UpdateOne
+    for s in snapshots:
+        ops.append(UpdateOne(
+            {"user_id": s.user_id, "date": s.date.isoformat()},
+            {"$set": {**s.model_dump(), "date": s.date.isoformat()}},
+            upsert=True,
+        ))
+    result = await db.daily_profiles.bulk_write(ops)
+    count = result.upserted_count + result.modified_count
+    logger.info("Bulk создано/обновлено %d снимков для user=%s", count, snapshots[0].user_id)
+    return count

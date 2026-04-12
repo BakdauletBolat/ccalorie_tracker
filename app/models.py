@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -15,3 +15,19 @@ class FoodEntry(BaseModel):
     description: str
     nutrition: NutritionData
     created_at: datetime
+
+
+class UserProfile(BaseModel):
+    user_id: int
+    gender: str  # "male" / "female"
+    weight: float  # кг
+    height: float  # см
+    age: int
+
+
+class DailyProfileSnapshot(BaseModel):
+    user_id: int
+    weight: float
+    height: float
+    age: int
+    date: date

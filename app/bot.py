@@ -3,13 +3,28 @@ from datetime import date, datetime, timedelta
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram import F
 
 from google.genai.errors import ClientError, ServerError
 
+from app.bmr import calc_bmr
 from app.config import settings
-from app.database import clear_entries, delete_entry, get_entries, get_entries_range, save_entry
-from app.models import FoodEntry, NutritionData
+from app.database import (
+    bulk_create_daily_snapshots,
+    clear_entries,
+    delete_entry,
+    get_daily_snapshot,
+    get_entries,
+    get_entries_range,
+    get_user_active_days,
+    get_user_profile,
+    save_entry,
+    upsert_daily_snapshot,
+    upsert_user_profile,
+)
+from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, UserProfile
 from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent
 
 logger = logging.getLogger(__name__)
@@ -26,25 +41,347 @@ KEYBOARD = types.ReplyKeyboardMarkup(
             types.KeyboardButton(text="🍽 Приёмы пищи"),
             types.KeyboardButton(text="📊 Неделя"),
         ],
+        [
+            types.KeyboardButton(text="👤 Профиль"),
+        ],
     ],
     resize_keyboard=True,
 )
 
 
+class OnboardingStates(StatesGroup):
+    waiting_gender = State()
+    waiting_weight = State()
+    waiting_height = State()
+    waiting_age = State()
+
+
+class EditProfileStates(StatesGroup):
+    waiting_weight = State()
+    waiting_height = State()
+    waiting_age = State()
+
+
 @dp.message(Command("start"))
-async def cmd_start(message: types.Message) -> None:
-    logger.info("user=%s вызвал /start", message.from_user.id)  # type: ignore[union-attr]
+async def cmd_start(message: types.Message, state: FSMContext) -> None:
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    logger.info("user=%s вызвал /start", user_id)
+    profile = await get_user_profile(user_id)
+    if profile:
+        bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+        name = message.from_user.first_name  # type: ignore[union-attr]
+        await message.answer(
+            f"👋 С возвращением, {name}!\n\n"
+            f"🎯 Твой BMR: <b>{bmr:.0f}</b> ккал/день\n\n"
+            "Просто напиши что ты съел, например:\n"
+            "«Овсянка и банан»",
+            reply_markup=KEYBOARD,
+            parse_mode="HTML",
+        )
+        return
+
+    # Онбординг — начинаем сбор профиля
     name = message.from_user.first_name  # type: ignore[union-attr]
+    await state.set_state(OnboardingStates.waiting_gender)
     await message.answer(
         f"👋 Привет, {name}!\n\n"
         "Я — КалорийБот 🍽\n"
-        "Веду учёт твоего питания.\n\n"
-        "Просто напиши что ты съел, например:\n"
-        "«Овсянка и банан»\n\n"
-        "🍽 Приёмы пищи — записи за сегодня\n"
-        "📊 Неделя — отчёт за неделю",
-        reply_markup=KEYBOARD,
+        "Для начала давай заполним твой профиль.\n\n"
+        "Выбери пол:",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="👨 Мужской", callback_data="gender:male"),
+                types.InlineKeyboardButton(text="👩 Женский", callback_data="gender:female"),
+            ]
+        ]),
     )
+
+
+@dp.callback_query(F.data.startswith("gender:"), OnboardingStates.waiting_gender)
+async def onboard_gender(callback: types.CallbackQuery, state: FSMContext) -> None:
+    gender = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    await state.update_data(gender=gender)
+    await state.set_state(OnboardingStates.waiting_weight)
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"✅ Пол: {'Мужской' if gender == 'male' else 'Женский'}\n\n"
+        "⚖️ Введи свой вес (кг):"
+    )
+    await callback.answer()
+
+
+@dp.message(OnboardingStates.waiting_weight)
+async def onboard_weight(message: types.Message, state: FSMContext) -> None:
+    try:
+        weight = float(message.text.replace(",", "."))  # type: ignore[union-attr]
+        assert 20 <= weight <= 300
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный вес (например: 75):")
+        return
+    await state.update_data(weight=weight)
+    await state.set_state(OnboardingStates.waiting_height)
+    await message.answer(f"✅ Вес: {weight} кг\n\n📏 Введи свой рост (см):")
+
+
+@dp.message(OnboardingStates.waiting_height)
+async def onboard_height(message: types.Message, state: FSMContext) -> None:
+    try:
+        height = float(message.text.replace(",", "."))  # type: ignore[union-attr]
+        assert 50 <= height <= 250
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный рост (например: 175):")
+        return
+    await state.update_data(height=height)
+    await state.set_state(OnboardingStates.waiting_age)
+    await message.answer(f"✅ Рост: {height} см\n\n🎂 Введи свой возраст:")
+
+
+@dp.message(OnboardingStates.waiting_age)
+async def onboard_age(message: types.Message, state: FSMContext) -> None:
+    try:
+        age = int(message.text)  # type: ignore[union-attr]
+        assert 5 <= age <= 120
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный возраст (например: 25):")
+        return
+
+    data = await state.get_data()
+    await state.clear()
+
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    profile = UserProfile(
+        user_id=user_id,
+        gender=data["gender"],
+        weight=data["weight"],
+        height=data["height"],
+        age=age,
+    )
+    await upsert_user_profile(profile)
+
+    # Дневной снимок на сегодня
+    await upsert_daily_snapshot(DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    ))
+
+    # Bulk-миграция: создать снимки для всех дней с записями еды
+    active_days = await get_user_active_days(user_id)
+    if active_days:
+        snapshots = [
+            DailyProfileSnapshot(
+                user_id=user_id, weight=profile.weight,
+                height=profile.height, age=profile.age, date=day,
+            )
+            for day in active_days
+        ]
+        await bulk_create_daily_snapshots(snapshots)
+
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    gender_label = "Мужской" if profile.gender == "male" else "Женский"
+    await message.answer(
+        f"✅ Профиль сохранён!\n\n"
+        f"🚻 Пол: {gender_label}\n"
+        f"⚖️ Вес: {profile.weight} кг\n"
+        f"📏 Рост: {profile.height} см\n"
+        f"🎂 Возраст: {profile.age}\n\n"
+        f"🎯 Твой BMR: <b>{bmr:.0f}</b> ккал/день\n\n"
+        "Теперь просто напиши что ты съел!",
+        reply_markup=KEYBOARD,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(F.text == "👤 Профиль")
+async def btn_profile(message: types.Message) -> None:
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await message.answer(
+            "Профиль не найден. Нажми /start чтобы создать.",
+        )
+        return
+
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    gender_label = "Мужской" if profile.gender == "male" else "Женский"
+    await message.answer(
+        f"👤 <b>Твой профиль</b>\n\n"
+        f"🚻 Пол: {gender_label}\n"
+        f"⚖️ Вес: {profile.weight} кг\n"
+        f"📏 Рост: {profile.height} см\n"
+        f"🎂 Возраст: {profile.age}\n\n"
+        f"🎯 BMR: <b>{bmr:.0f}</b> ккал/день",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="⚖️ Изменить вес", callback_data="edit:weight")],
+            [types.InlineKeyboardButton(text="📏 Изменить рост", callback_data="edit:height")],
+            [types.InlineKeyboardButton(text="🎂 Изменить возраст", callback_data="edit:age")],
+            [types.InlineKeyboardButton(text="🚻 Изменить пол", callback_data="edit:gender")],
+        ]),
+        parse_mode="HTML",
+    )
+
+
+@dp.callback_query(F.data == "edit:weight")
+async def cb_edit_weight(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(EditProfileStates.waiting_weight)
+    await callback.message.edit_text("⚖️ Введи новый вес (кг):")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "edit:height")
+async def cb_edit_height(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(EditProfileStates.waiting_height)
+    await callback.message.edit_text("📏 Введи новый рост (см):")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "edit:age")
+async def cb_edit_age(callback: types.CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(EditProfileStates.waiting_age)
+    await callback.message.edit_text("🎂 Введи новый возраст:")  # type: ignore[union-attr]
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "edit:gender")
+async def cb_edit_gender(callback: types.CallbackQuery) -> None:
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        "🚻 Выбери пол:",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [
+                types.InlineKeyboardButton(text="👨 Мужской", callback_data="setgender:male"),
+                types.InlineKeyboardButton(text="👩 Женский", callback_data="setgender:female"),
+            ]
+        ]),
+    )
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("setgender:"))
+async def cb_set_gender(callback: types.CallbackQuery) -> None:
+    gender = callback.data.split(":", 1)[1]  # type: ignore[union-attr]
+    user_id = callback.from_user.id
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await callback.answer("Профиль не найден")
+        return
+    profile.gender = gender
+    await upsert_user_profile(profile)
+    await upsert_daily_snapshot(DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    ))
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    gender_label = "Мужской" if gender == "male" else "Женский"
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        f"✅ Пол изменён: {gender_label}\n"
+        f"🎯 BMR: <b>{bmr:.0f}</b> ккал/день",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@dp.message(EditProfileStates.waiting_weight)
+async def edit_weight(message: types.Message, state: FSMContext) -> None:
+    try:
+        weight = float(message.text.replace(",", "."))  # type: ignore[union-attr]
+        assert 20 <= weight <= 300
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный вес (например: 75):")
+        return
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await state.clear()
+        await message.answer("Профиль не найден. Нажми /start.")
+        return
+    profile.weight = weight
+    await upsert_user_profile(profile)
+    await upsert_daily_snapshot(DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    ))
+    await state.clear()
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    await message.answer(
+        f"✅ Вес изменён: {weight} кг\n"
+        f"🎯 BMR: <b>{bmr:.0f}</b> ккал/день",
+        reply_markup=KEYBOARD,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(EditProfileStates.waiting_height)
+async def edit_height(message: types.Message, state: FSMContext) -> None:
+    try:
+        height = float(message.text.replace(",", "."))  # type: ignore[union-attr]
+        assert 50 <= height <= 250
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный рост (например: 175):")
+        return
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await state.clear()
+        await message.answer("Профиль не найден. Нажми /start.")
+        return
+    profile.height = height
+    await upsert_user_profile(profile)
+    await upsert_daily_snapshot(DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    ))
+    await state.clear()
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    await message.answer(
+        f"✅ Рост изменён: {height} см\n"
+        f"🎯 BMR: <b>{bmr:.0f}</b> ккал/день",
+        reply_markup=KEYBOARD,
+        parse_mode="HTML",
+    )
+
+
+@dp.message(EditProfileStates.waiting_age)
+async def edit_age(message: types.Message, state: FSMContext) -> None:
+    try:
+        age = int(message.text)  # type: ignore[union-attr]
+        assert 5 <= age <= 120
+    except (ValueError, AssertionError, TypeError):
+        await message.answer("Введи корректный возраст (например: 25):")
+        return
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    profile = await get_user_profile(user_id)
+    if not profile:
+        await state.clear()
+        await message.answer("Профиль не найден. Нажми /start.")
+        return
+    profile.age = age
+    await upsert_user_profile(profile)
+    await upsert_daily_snapshot(DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    ))
+    await state.clear()
+    bmr = calc_bmr(profile.weight, profile.height, profile.age, profile.gender)
+    await message.answer(
+        f"✅ Возраст изменён: {age}\n"
+        f"🎯 BMR: <b>{bmr:.0f}</b> ккал/день",
+        reply_markup=KEYBOARD,
+        parse_mode="HTML",
+    )
+
+
+async def _ensure_daily_snapshot(user_id: int) -> DailyProfileSnapshot | None:
+    """Создаёт снимок на сегодня если его нет. Возвращает снимок или None."""
+    snapshot = await get_daily_snapshot(user_id, date.today())
+    if snapshot:
+        return snapshot
+    profile = await get_user_profile(user_id)
+    if not profile:
+        return None
+    snapshot = DailyProfileSnapshot(
+        user_id=user_id, weight=profile.weight,
+        height=profile.height, age=profile.age, date=date.today(),
+    )
+    await upsert_daily_snapshot(snapshot)
+    return snapshot
 
 
 async def _show_history(message: types.Message, day: date | None = None) -> None:
@@ -76,9 +413,22 @@ async def _show_history(message: types.Message, day: date | None = None) -> None
         f"🔥 Калории: <b>{total.calories:.0f}</b> ккал\n"
         f"🥩 Белки: <b>{total.protein:.0f}</b> г\n"
         f"🧈 Жиры: <b>{total.fat:.0f}</b> г\n"
-        f"🍞 Углеводы: <b>{total.carbs:.0f}</b> г\n\n"
-        f"Записей: {len(entries)} — нажми чтобы посмотреть подробнее:"
+        f"🍞 Углеводы: <b>{total.carbs:.0f}</b> г\n"
     )
+
+    # Дефицит калорий
+    snapshot = await get_daily_snapshot(message.from_user.id, day)  # type: ignore[union-attr]
+    if snapshot:
+        profile = await get_user_profile(message.from_user.id)  # type: ignore[union-attr]
+        if profile:
+            bmr = calc_bmr(snapshot.weight, snapshot.height, snapshot.age, profile.gender)
+            diff = total.calories - bmr
+            if diff <= 0:
+                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
+            else:
+                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
+
+    text += f"\n\nЗаписей: {len(entries)} — нажми чтобы посмотреть подробнее:"
     await message.answer(
         text,
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -137,7 +487,7 @@ async def cb_delete(callback: types.CallbackQuery) -> None:
         label = "Сегодня" if day == date.today() else day.strftime('%d.%m.%Y')
         await callback.message.edit_text(f"Записей за {label} нет.")  # type: ignore[union-attr]
         return
-    await _edit_history(callback.message, entries, day)  # type: ignore[arg-type]
+    await _edit_history(callback.message, entries, day, callback.from_user.id)  # type: ignore[arg-type]
 
 
 @dp.callback_query(F.data.startswith("back:"))
@@ -150,11 +500,11 @@ async def cb_back(callback: types.CallbackQuery) -> None:
         await callback.message.edit_text(f"Записей за {label} нет.")  # type: ignore[union-attr]
         await callback.answer()
         return
-    await _edit_history(callback.message, entries, day)  # type: ignore[arg-type]
+    await _edit_history(callback.message, entries, day, callback.from_user.id)  # type: ignore[arg-type]
     await callback.answer()
 
 
-async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEntry]], day: date) -> None:
+async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEntry]], day: date, user_id: int) -> None:
     day_str = day.isoformat()
     total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     buttons: list[list[types.InlineKeyboardButton]] = []
@@ -176,9 +526,21 @@ async def _edit_history(message: types.Message, entries: list[tuple[str, FoodEnt
         f"🔥 Калории: <b>{total.calories:.0f}</b> ккал\n"
         f"🥩 Белки: <b>{total.protein:.0f}</b> г\n"
         f"🧈 Жиры: <b>{total.fat:.0f}</b> г\n"
-        f"🍞 Углеводы: <b>{total.carbs:.0f}</b> г\n\n"
-        f"Записей: {len(entries)} — нажми чтобы посмотреть подробнее:"
+        f"🍞 Углеводы: <b>{total.carbs:.0f}</b> г\n"
     )
+
+    snapshot = await get_daily_snapshot(user_id, day)
+    if snapshot:
+        profile = await get_user_profile(user_id)
+        if profile:
+            bmr = calc_bmr(snapshot.weight, snapshot.height, snapshot.age, profile.gender)
+            diff = total.calories - bmr
+            if diff <= 0:
+                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📉 Осталось: <b>{abs(diff):.0f}</b> ккал"
+            else:
+                text += f"\n🎯 BMR: {bmr:.0f} ккал\n📈 Сверх нормы: <b>{diff:.0f}</b> ккал"
+
+    text += f"\n\nЗаписей: {len(entries)} — нажми чтобы посмотреть подробнее:"
     await message.edit_text(
         text,
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -222,6 +584,7 @@ WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.InlineKeyboardMarkup]:
     start, end = _week_bounds(ref)
     entries = await get_entries_range(user_id, start, end)
+    profile = await get_user_profile(user_id)
 
     # Group by day
     daily: dict[date, NutritionData] = {}
@@ -234,8 +597,19 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
         daily[day].fat += e.nutrition.fat
         daily[day].carbs += e.nutrition.carbs
 
+    # Собираем снимки для дней с записями (для BMR)
+    snapshots: dict[date, DailyProfileSnapshot] = {}
+    if profile:
+        for day in daily:
+            snap = await get_daily_snapshot(user_id, day)
+            if snap:
+                snapshots[day] = snap
+
     lines: list[str] = []
     week_total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    total_deficit = 0.0
+    days_with_bmr = 0
+
     for i in range(7):
         day = start + timedelta(days=i)
         label = f"{WEEKDAYS[i]} {day.strftime('%d.%m')}"
@@ -243,10 +617,21 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
             label = f"<b>{label} (сегодня)</b>"
         n = daily.get(day)
         if n:
-            lines.append(
+            line = (
                 f"{label} — {n.calories:.0f} ккал | "
                 f"{n.protein:.0f}Б {n.fat:.0f}Ж {n.carbs:.0f}У"
             )
+            snap = snapshots.get(day)
+            if snap and profile:
+                bmr = calc_bmr(snap.weight, snap.height, snap.age, profile.gender)
+                diff = n.calories - bmr
+                total_deficit += diff
+                days_with_bmr += 1
+                if diff <= 0:
+                    line += f" | 📉 {diff:.0f}"
+                else:
+                    line += f" | 📈 +{diff:.0f}"
+            lines.append(line)
             week_total.calories += n.calories
             week_total.protein += n.protein
             week_total.fat += n.fat
@@ -263,6 +648,13 @@ async def _build_week_report(user_id: int, ref: date) -> tuple[str, types.Inline
         f"🧈 {week_total.fat:.0f} Ж | "
         f"🍞 {week_total.carbs:.0f} У"
     )
+
+    if days_with_bmr > 0:
+        avg_deficit = total_deficit / days_with_bmr
+        if avg_deficit <= 0:
+            text += f"\n\n📉 Средний дефицит: <b>{abs(avg_deficit):.0f}</b> ккал/день"
+        else:
+            text += f"\n\n📈 Средний профицит: <b>{avg_deficit:.0f}</b> ккал/день"
 
     prev_week = (start - timedelta(days=7)).isoformat()
     next_week = (start + timedelta(days=7)).isoformat()
@@ -401,6 +793,9 @@ async def handle_food(message: types.Message) -> None:
 
     user_id = message.from_user.id  # type: ignore[union-attr]
     logger.info("user=%s отправил текст: %s", user_id, message.text)
+
+    # Автоснимок профиля при первом сообщении за день
+    await _ensure_daily_snapshot(user_id)
 
     # If user has pending entries, skip intent detection — treat as food context update
     if user_id in _pending:
