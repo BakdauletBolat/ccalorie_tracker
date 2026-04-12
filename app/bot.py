@@ -10,19 +10,19 @@ from google.genai.errors import ClientError, ServerError
 from app.config import settings
 from app.database import clear_entries, delete_entry, get_entries, save_entry
 from app.models import FoodEntry, NutritionData
-from app.parser import generate_off_topic_reply, parse_food_text, parse_intent
+from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent
 
 logger = logging.getLogger(__name__)
+
+# Pending entries awaiting user confirmation: user_id -> list[FoodEntry]
+_pending: dict[int, list[FoodEntry]] = {}
 
 bot = Bot(token=settings.TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 KEYBOARD = types.ReplyKeyboardMarkup(
     keyboard=[
-        [
-            types.KeyboardButton(text="📋 История"),
-            types.KeyboardButton(text="🗑 Очистить"),
-        ]
+        [types.KeyboardButton(text="📋 История")],
     ],
     resize_keyboard=True,
 )
@@ -194,9 +194,111 @@ async def cmd_clear(message: types.Message) -> None:
     await _do_clear(message)
 
 
-@dp.message(F.text == "🗑 Очистить")
-async def btn_clear(message: types.Message) -> None:
-    await _do_clear(message)
+def _build_pending_text(entries: list[FoodEntry]) -> str:
+    total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    lines: list[str] = []
+    for i, e in enumerate(entries, 1):
+        lines.append(f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал")
+        total.calories += e.nutrition.calories
+        total.protein += e.nutrition.protein
+        total.fat += e.nutrition.fat
+        total.carbs += e.nutrition.carbs
+
+    items_text = "\n".join(lines)
+    return (
+        f"🍽 <b>Приём пищи</b>\n\n"
+        f"{items_text}\n\n"
+        f"<b>Итого:</b>\n"
+        f"🔥 {total.calories:.0f} ккал | "
+        f"🥩 {total.protein:.0f} Б | "
+        f"🧈 {total.fat:.0f} Ж | "
+        f"🍞 {total.carbs:.0f} У\n\n"
+        f"Добавь ещё продукт, измени список или подтверди:"
+    )
+
+
+def _build_pending_keyboard(entries: list[FoodEntry]) -> types.InlineKeyboardMarkup:
+    buttons: list[list[types.InlineKeyboardButton]] = []
+    for i, e in enumerate(entries):
+        buttons.append([
+            types.InlineKeyboardButton(
+                text=f"❌ {i + 1}. {e.description}",
+                callback_data=f"pdel:{i}",
+            )
+        ])
+    buttons.append([
+        types.InlineKeyboardButton(text="✅ Записать", callback_data="confirm"),
+        types.InlineKeyboardButton(text="🚫 Отмена", callback_data="cancel"),
+    ])
+    return types.InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+@dp.callback_query(F.data.startswith("pdel:"))
+async def cb_pending_delete(callback: types.CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    index = int(callback.data.split(":", 1)[1])  # type: ignore[union-attr]
+    entries = _pending.get(user_id)
+    if not entries or index >= len(entries):
+        await callback.answer("Не найдено")
+        return
+
+    removed = entries.pop(index)
+    logger.info("user=%s убрал из pending: %s", user_id, removed.description)
+
+    if not entries:
+        _pending.pop(user_id, None)
+        await callback.message.edit_text("Список очищен.")  # type: ignore[union-attr]
+        await callback.answer()
+        return
+
+    await callback.message.edit_text(  # type: ignore[union-attr]
+        _build_pending_text(entries),
+        reply_markup=_build_pending_keyboard(entries),
+        parse_mode="HTML",
+    )
+    await callback.answer(f"Убрано: {removed.description}")
+
+
+@dp.callback_query(F.data == "confirm")
+async def cb_confirm(callback: types.CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    entries = _pending.pop(user_id, None)
+    if not entries:
+        await callback.answer("Нет записей для сохранения")
+        return
+
+    for entry in entries:
+        await save_entry(entry)
+    logger.info("user=%s подтвердил %d записей", user_id, len(entries))
+
+    total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    lines: list[str] = []
+    for i, e in enumerate(entries, 1):
+        lines.append(f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал")
+        total.calories += e.nutrition.calories
+        total.protein += e.nutrition.protein
+        total.fat += e.nutrition.fat
+        total.carbs += e.nutrition.carbs
+
+    text = (
+        f"✅ <b>Записано!</b>\n\n"
+        f"{chr(10).join(lines)}\n\n"
+        f"🔥 {total.calories:.0f} ккал | "
+        f"🥩 {total.protein:.0f} Б | "
+        f"🧈 {total.fat:.0f} Ж | "
+        f"🍞 {total.carbs:.0f} У"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML")  # type: ignore[union-attr]
+    await callback.answer("Записано!")
+
+
+@dp.callback_query(F.data == "cancel")
+async def cb_cancel(callback: types.CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    _pending.pop(user_id, None)
+    logger.info("user=%s отменил pending", user_id)
+    await callback.message.edit_text("🚫 Отменено.")  # type: ignore[union-attr]
+    await callback.answer()
 
 
 @dp.message()
@@ -204,12 +306,43 @@ async def handle_food(message: types.Message) -> None:
     if not message.text:
         return
 
-    logger.info("user=%s отправил текст: %s", message.from_user.id, message.text)  # type: ignore[union-attr]
+    user_id = message.from_user.id  # type: ignore[union-attr]
+    logger.info("user=%s отправил текст: %s", user_id, message.text)
+
+    # If user has pending entries, skip intent detection — treat as food context update
+    if user_id in _pending:
+        await message.answer("Обрабатываю...")
+        current_descriptions = [e.description for e in _pending[user_id]]
+        try:
+            items = await parse_food_with_context(message.text, current_descriptions)
+        except (ServerError, ClientError):
+            logger.warning("Gemini ошибка для user=%s", user_id)
+            await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
+            return
+
+        _pending[user_id] = [
+            FoodEntry(
+                user_id=user_id,
+                description=p.description,
+                nutrition=NutritionData(
+                    calories=p.calories, protein=p.protein,
+                    fat=p.fat, carbs=p.carbs,
+                ),
+                created_at=datetime.now(),
+            )
+            for p in items
+        ]
+        await message.answer(
+            _build_pending_text(_pending[user_id]),
+            reply_markup=_build_pending_keyboard(_pending[user_id]),
+            parse_mode="HTML",
+        )
+        return
 
     try:
         intent = await parse_intent(message.text)
     except (ServerError, ClientError):
-        logger.warning("Gemini ошибка для user=%s", message.from_user.id)  # type: ignore[union-attr]
+        logger.warning("Gemini ошибка для user=%s", user_id)
         await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
         return
 
@@ -231,29 +364,24 @@ async def handle_food(message: types.Message) -> None:
     try:
         parsed = await parse_food_text(message.text)
     except (ServerError, ClientError):
-        logger.warning("Gemini ошибка для user=%s", message.from_user.id)  # type: ignore[union-attr]
+        logger.warning("Gemini ошибка для user=%s", user_id)
         await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
         return
 
     entry = FoodEntry(
-        user_id=message.from_user.id,  # type: ignore[union-attr]
+        user_id=user_id,
         description=parsed.description,
         nutrition=NutritionData(
-            calories=parsed.calories,
-            protein=parsed.protein,
-            fat=parsed.fat,
-            carbs=parsed.carbs,
+            calories=parsed.calories, protein=parsed.protein,
+            fat=parsed.fat, carbs=parsed.carbs,
         ),
         created_at=datetime.now(),
     )
-    await save_entry(entry)
-    logger.info("user=%s записано: %s | %s", message.from_user.id, entry.description, entry.nutrition)  # type: ignore[union-attr]
+    _pending[user_id] = [entry]
+    logger.info("user=%s pending: %s", user_id, entry.description)
 
     await message.answer(
-        f"✅ <b>{entry.description}</b>\n\n"
-        f"🔥 Калории: {entry.nutrition.calories:.0f} ккал\n"
-        f"🥩 Белки: {entry.nutrition.protein:.0f} г\n"
-        f"🧈 Жиры: {entry.nutrition.fat:.0f} г\n"
-        f"🍞 Углеводы: {entry.nutrition.carbs:.0f} г",
+        _build_pending_text(_pending[user_id]),
+        reply_markup=_build_pending_keyboard(_pending[user_id]),
         parse_mode="HTML",
     )

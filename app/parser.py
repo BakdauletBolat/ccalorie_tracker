@@ -36,7 +36,7 @@ INTENT_PROMPT = (
     "Укажи date в формате YYYY-MM-DD.\n"
     '- intent="food" — пользователь описывает что он ел или пил.\n'
     '- intent="other" — всё остальное, не связано с едой и историей.\n\n'
-    f"Сегодня: {date.today().isoformat()}.\n"
+    "Сегодня: {today}.\n"
     "Текст пользователя:\n"
 )
 
@@ -58,7 +58,7 @@ async def parse_intent(text: str) -> ParsedIntent:
     logger.info("Определение намерения: %s", text)
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=INTENT_PROMPT + text,
+        contents=INTENT_PROMPT.format(today=date.today().isoformat()) + text,
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedIntent,
@@ -91,3 +91,33 @@ async def parse_food_text(text: str) -> ParsedFood:
     result = ParsedFood.model_validate_json(response.text)
     logger.info("Gemini результат: %s", result.model_dump())
     return result
+
+
+CONTEXT_PROMPT = (
+    "Пользователь ведёт список еды. Вот текущий список:\n"
+    "{current}\n\n"
+    "Пользователь написал: \"{text}\"\n\n"
+    "Верни обновлённый полный список продуктов с КБЖУ. "
+    "Пользователь может добавлять, убирать или заменять продукты. "
+    "Если значение не указано, оцени приблизительно.\n"
+)
+
+
+class ParsedFoodList(BaseModel):
+    items: list[ParsedFood]
+
+
+async def parse_food_with_context(text: str, current_items: list[str]) -> list[ParsedFood]:
+    current = "\n".join(f"- {item}" for item in current_items) if current_items else "(пусто)"
+    logger.info("Парсинг с контекстом: %s | текущий список: %s", text, current_items)
+    response = await _client.aio.models.generate_content(
+        model="gemini-2.5-flash-lite",
+        contents=CONTEXT_PROMPT.format(current=current, text=text),
+        config=genai.types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=ParsedFoodList,
+        ),
+    )
+    result = ParsedFoodList.model_validate_json(response.text)
+    logger.info("Gemini контекстный результат: %s", [i.model_dump() for i in result.items])
+    return result.items
