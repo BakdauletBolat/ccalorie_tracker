@@ -58,7 +58,7 @@ REFERENCE_PRODUCTS: tuple[ReferenceProduct, ...] = (
             "exponenta высокобелковый кисломолочный напиток",
             "высокобелковый кисломолочный напиток exponenta",
         ),
-        100.0,
+        250.0,
         150.0,
         30.0,
         0.0,
