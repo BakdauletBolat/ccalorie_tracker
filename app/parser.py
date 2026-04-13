@@ -1,4 +1,6 @@
 import logging
+from dataclasses import dataclass
+import re
 
 from datetime import date
 
@@ -11,6 +13,76 @@ from app.models import NutritionData
 logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
+
+@dataclass(frozen=True)
+class ReferenceProduct:
+    short_description: str
+    aliases: tuple[str, ...]
+    default_grams: float | None
+    calories_per_100g: float
+    protein_per_100g: float
+    fat_per_100g: float
+    carbs_per_100g: float
+
+
+REFERENCE_PRODUCTS: tuple[ReferenceProduct, ...] = (
+    ReferenceProduct("Хлеб", ("хлеб", "хлеб белый", "батон"), 45.0, 265.0, 9.0, 3.2, 49.0),
+    ReferenceProduct("Сыр", ("сыр", "сыр российский", "сыр твердый", "твёрдый сыр"), 30.0, 360.0, 24.0, 30.0, 0.0),
+    ReferenceProduct("Рис", ("рис", "рис вареный", "рис варёный"), 150.0, 116.0, 2.5, 0.3, 24.9),
+    ReferenceProduct("Курица", ("курица", "куриная грудка", "грудка куриная", "куриное филе"), 150.0, 165.0, 23.0, 3.6, 0.0),
+    ReferenceProduct("Банан", ("банан",), 120.0, 89.0, 1.1, 0.3, 22.8),
+    ReferenceProduct("Яблоко", ("яблоко",), 180.0, 52.0, 0.3, 0.2, 14.0),
+    ReferenceProduct("Яйцо", ("яйцо", "яйца"), 50.0, 143.0, 12.6, 9.5, 0.7),
+    ReferenceProduct("Молоко", ("молоко",), 250.0, 52.0, 2.8, 2.5, 4.7),
+    ReferenceProduct("Творог 0%", ("творог 0", "творог 0%", "обезжиренный творог"), 180.0, 71.0, 16.5, 0.0, 1.3),
+    ReferenceProduct("Творог 5%", ("творог 5", "творог 5%"), 180.0, 121.0, 17.2, 5.0, 1.8),
+    ReferenceProduct("Творог 9%", ("творог 9", "творог 9%"), 180.0, 159.0, 16.7, 9.0, 2.0),
+    ReferenceProduct("Кофе", ("кофе", "американо", "эспрессо", "капучино"), 250.0, 2.0, 0.3, 0.0, 0.2),
+    ReferenceProduct("Чай", ("чай",), 250.0, 1.0, 0.0, 0.0, 0.2),
+    ReferenceProduct(
+        "Протеин с водой",
+        ("bombbar протеин", "bombbar protein", "протеин bombbar", "протеин с водой", "protein with water"),
+        100.0,
+        120.0,
+        22.0,
+        0.0,
+        0.0,
+    ),
+    ReferenceProduct(
+        "Exponenta",
+        (
+            "exponenta",
+            "экспонента",
+            "exponenta high protein",
+            "exponenta высокобелковый кисломолочный напиток",
+            "высокобелковый кисломолочный напиток exponenta",
+        ),
+        100.0,
+        150.0,
+        30.0,
+        0.0,
+        0.0,
+    ),
+    ReferenceProduct(
+        "Гамбургер McDonald's",
+        ("гамбургер макдональдс", "гамбургер mcdonalds", "mcdonalds hamburger", "mcdonalds hamburger", "гамбургер mc donalds"),
+        100.0,
+        257.0,
+        12.0,
+        10.0,
+        30.0,
+    ),
+    ReferenceProduct(
+        "Дабл чизбургер",
+        ("дабл чизбургер", "double cheeseburger", "макдональдс дабл чизбургер", "mcdonalds double cheeseburger"),
+        167.0,
+        271.9,
+        15.0,
+        15.0,
+        19.2,
+    ),
+)
 
 
 # ── Response schemas ────────────────────────────────────────
@@ -130,6 +202,87 @@ WORKOUT_PROMPT = (
 # ── Functions ───────────────────────────────────────────────
 
 
+def _normalize_product_name(text: str) -> str:
+    normalized = text.lower().replace("ё", "е")
+    normalized = re.sub(r"[^a-zа-я0-9\s]", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _find_reference_product(text: str) -> ReferenceProduct | None:
+    haystack = _normalize_product_name(text)
+    for product in REFERENCE_PRODUCTS:
+        for alias in product.aliases:
+            alias_normalized = _normalize_product_name(alias)
+            if alias_normalized and alias_normalized in haystack:
+                return product
+    return None
+
+
+def _format_reference_block(text: str) -> str:
+    matched: list[ReferenceProduct] = []
+    normalized_text = _normalize_product_name(text)
+    for product in REFERENCE_PRODUCTS:
+        if any(_normalize_product_name(alias) in normalized_text for alias in product.aliases):
+            matched.append(product)
+
+    if not matched:
+        return ""
+
+    lines = [
+        "\nСправочные продукты для этого сообщения. Используй их как приоритетный источник:\n",
+    ]
+    for product in matched:
+        default_grams = "null" if product.default_grams is None else f"{product.default_grams:.0f}"
+        lines.append(
+            f"- {product.short_description}: aliases={', '.join(product.aliases)}; "
+            f"default_grams={default_grams}; "
+            f"per_100g={product.calories_per_100g:.0f} ккал, {product.protein_per_100g:.1f} Б, "
+            f"{product.fat_per_100g:.1f} Ж, {product.carbs_per_100g:.1f} У"
+        )
+    lines.append(
+        "Если продукт найден в этом справочнике, используй его default_grams и per_100g как источник истины. "
+        "Если пользователь указал свой вес, пересчитай строго от справочных per_100g на этот вес.\n"
+    )
+    return "\n".join(lines)
+
+
+def _nutrition_from_reference(product: ReferenceProduct, grams: float) -> tuple[float, float, float, float]:
+    ratio = grams / 100.0
+    return (
+        product.calories_per_100g * ratio,
+        product.protein_per_100g * ratio,
+        product.fat_per_100g * ratio,
+        product.carbs_per_100g * ratio,
+    )
+
+
+def _normalize_item_with_reference(item: ParsedProductItem) -> ParsedProductItem:
+    reference = _find_reference_product(f"{item.short_description} {item.description}")
+    if not reference:
+        return item
+
+    grams = item.grams if item.grams is not None else reference.default_grams
+    if grams is None:
+        return item
+
+    calories, protein, fat, carbs = _nutrition_from_reference(reference, grams)
+    return ParsedProductItem(
+        description=item.description,
+        short_description=reference.short_description,
+        grams=grams,
+        calories=round(calories, 1),
+        protein=round(protein, 1),
+        fat=round(fat, 1),
+        carbs=round(carbs, 1),
+    )
+
+
+def _normalize_items_with_reference(items: list[ParsedProductItem]) -> list[ParsedProductItem]:
+    normalized = [_normalize_item_with_reference(item) for item in items]
+    logger.info("Нормализовано по справочнику: %s", [i.model_dump() for i in normalized])
+    return normalized
+
+
 async def parse_intent(text: str) -> ParsedIntent:
     logger.info("Определение намерения: %s", text)
     response = await _client.aio.models.generate_content(
@@ -158,7 +311,7 @@ async def parse_food_text(text: str) -> list[ParsedProductItem]:
     logger.info("Парсинг текста через Gemini: %s", text)
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=FOOD_PROMPT + text,
+        contents=FOOD_PROMPT + _format_reference_block(text) + text,
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedFoodResponse,
@@ -166,7 +319,7 @@ async def parse_food_text(text: str) -> list[ParsedProductItem]:
     )
     result = ParsedFoodResponse.model_validate_json(response.text)
     logger.info("Gemini результат: %s", [i.model_dump() for i in result.items])
-    return result.items
+    return _normalize_items_with_reference(result.items)
 
 
 async def parse_workout_text(text: str) -> ParsedWorkout:
@@ -189,7 +342,7 @@ async def parse_food_with_context(text: str, current_items: list[str]) -> list[P
     logger.info("Парсинг с контекстом: %s | текущий список: %s", text, current_items)
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=CONTEXT_FOOD_PROMPT.format(current=current, text=text),
+        contents=CONTEXT_FOOD_PROMPT.format(current=current, text=text) + _format_reference_block(text),
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedFoodResponse,
@@ -197,4 +350,4 @@ async def parse_food_with_context(text: str, current_items: list[str]) -> list[P
     )
     result = ParsedFoodResponse.model_validate_json(response.text)
     logger.info("Gemini контекстный результат: %s", [i.model_dump() for i in result.items])
-    return result.items
+    return _normalize_items_with_reference(result.items)
