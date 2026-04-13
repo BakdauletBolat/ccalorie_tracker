@@ -27,13 +27,13 @@ from app.database import (
     upsert_daily_snapshot,
     upsert_user_profile,
 )
-from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, UserProfile, WorkoutEntry
-from app.parser import generate_off_topic_reply, parse_food_text, parse_food_with_context, parse_intent, parse_workout_text
+from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, ProductItem, UserProfile, WorkoutEntry
+from app.parser import ParsedProductItem, generate_off_topic_reply, parse_food_text, parse_intent, parse_workout_text
 
 logger = logging.getLogger(__name__)
 
-# Pending entries awaiting user confirmation: user_id -> list[FoodEntry]
-_pending: dict[int, list[FoodEntry]] = {}
+# Pending products awaiting user confirmation: user_id -> list[ProductItem]
+_pending: dict[int, list[ProductItem]] = {}
 
 bot = Bot(token=settings.TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -462,14 +462,7 @@ async def cb_view(callback: types.CallbackQuery) -> None:
         await callback.answer("Запись не найдена")
         return
 
-    text = (
-        f"🍽 <b>{entry.description}</b>\n\n"
-        f"🔥 Калории: {entry.nutrition.calories:.0f} ккал\n"
-        f"🥩 Белки: {entry.nutrition.protein:.0f} г\n"
-        f"🧈 Жиры: {entry.nutrition.fat:.0f} г\n"
-        f"🍞 Углеводы: {entry.nutrition.carbs:.0f} г\n\n"
-        f"🕐 {entry.created_at.strftime('%H:%M')}"
-    )
+    text = _build_entry_view_text(entry)
     day_str = day.isoformat()
     keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
         [types.InlineKeyboardButton(text="❌ Удалить", callback_data=f"del:{entry_id}:{day_str}")],
@@ -702,17 +695,100 @@ async def cb_week(callback: types.CallbackQuery) -> None:
     await callback.answer()
 
 
-def _build_pending_text(entries: list[FoodEntry]) -> str:
+def _sum_nutrition(items: list[ProductItem]) -> NutritionData:
+    total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    for item in items:
+        total.calories += item.nutrition.calories
+        total.protein += item.nutrition.protein
+        total.fat += item.nutrition.fat
+        total.carbs += item.nutrition.carbs
+    return total
+
+
+def _product_title(item: ProductItem) -> str:
+    title = item.short_description or item.description
+    if item.grams is not None:
+        return f"{title} ({item.grams:.0f}г)"
+    return title
+
+
+def _product_from_parsed(parsed_item: ParsedProductItem) -> ProductItem:
+    return ProductItem(
+        description=parsed_item.description,
+        short_description=parsed_item.short_description,
+        grams=parsed_item.grams,
+        nutrition=NutritionData(
+            calories=parsed_item.calories,
+            protein=parsed_item.protein,
+            fat=parsed_item.fat,
+            carbs=parsed_item.carbs,
+        ),
+    )
+
+
+def _food_entry_from_items(user_id: int, items: list[ProductItem]) -> FoodEntry:
+    total = _sum_nutrition(items)
+    descriptions = [item.description for item in items]
+    short_descriptions = [item.short_description or item.description for item in items]
+    return FoodEntry(
+        user_id=user_id,
+        description=", ".join(descriptions),
+        short_description=", ".join(short_descriptions),
+        items=items,
+        nutrition=total,
+        created_at=datetime.now(),
+    )
+
+
+def _build_entry_view_text(entry: FoodEntry) -> str:
+    if entry.items:
+        lines = [f"🍽 <b>{entry.short_description or entry.description}</b>", ""]
+        for i, item in enumerate(entry.items, 1):
+            lines.append(
+                f"{i}. {_product_title(item)}\n"
+                f"🔥 {item.nutrition.calories:.0f} ккал | "
+                f"🥩 {item.nutrition.protein:.0f}Б | "
+                f"🧈 {item.nutrition.fat:.0f}Ж | "
+                f"🍞 {item.nutrition.carbs:.0f}У"
+            )
+            if i < len(entry.items):
+                lines.append("")
+        lines.extend([
+            "",
+            "<b>Итого:</b>",
+            f"🔥 {entry.nutrition.calories:.0f} ккал | "
+            f"🥩 {entry.nutrition.protein:.0f} г | "
+            f"🧈 {entry.nutrition.fat:.0f} г | "
+            f"🍞 {entry.nutrition.carbs:.0f} г",
+            "",
+            f"🕐 {entry.created_at.strftime('%H:%M')}",
+        ])
+        return "\n".join(lines)
+
+    return (
+        f"🍽 <b>{entry.description}</b>\n\n"
+        f"🔥 Калории: {entry.nutrition.calories:.0f} ккал\n"
+        f"🥩 Белки: {entry.nutrition.protein:.0f} г\n"
+        f"🧈 Жиры: {entry.nutrition.fat:.0f} г\n"
+        f"🍞 Углеводы: {entry.nutrition.carbs:.0f} г\n\n"
+        f"🕐 {entry.created_at.strftime('%H:%M')}"
+    )
+
+
+def _build_pending_text(entries: list[ProductItem]) -> str:
     total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     lines: list[str] = []
-    for i, e in enumerate(entries, 1):
-        lines.append(f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал")
-        total.calories += e.nutrition.calories
-        total.protein += e.nutrition.protein
-        total.fat += e.nutrition.fat
-        total.carbs += e.nutrition.carbs
+    for i, item in enumerate(entries, 1):
+        lines.append(
+            f"{i}. {_product_title(item)}\n"
+            f"🔥 {item.nutrition.calories:.0f} ккал | "
+            f"🥩 {item.nutrition.protein:.0f}Б | "
+            f"🧈 {item.nutrition.fat:.0f}Ж | "
+            f"🍞 {item.nutrition.carbs:.0f}У"
+        )
+    total = _sum_nutrition(entries)
 
-    items_text = "\n".join(lines)
+    items_text = "\n\n".join(lines)
     return (
         f"🍽 <b>Приём пищи</b>\n\n"
         f"{items_text}\n\n"
@@ -725,12 +801,12 @@ def _build_pending_text(entries: list[FoodEntry]) -> str:
     )
 
 
-def _build_pending_keyboard(entries: list[FoodEntry]) -> types.InlineKeyboardMarkup:
+def _build_pending_keyboard(entries: list[ProductItem]) -> types.InlineKeyboardMarkup:
     buttons: list[list[types.InlineKeyboardButton]] = []
-    for i, e in enumerate(entries):
+    for i, item in enumerate(entries):
         buttons.append([
             types.InlineKeyboardButton(
-                text=f"❌ {i + 1}. {e.description}",
+                text=f"❌ {i + 1}. {_product_title(item)}",
                 callback_data=f"pdel:{i}",
             )
         ])
@@ -770,23 +846,25 @@ async def cb_pending_delete(callback: types.CallbackQuery) -> None:
 @dp.callback_query(F.data == "confirm")
 async def cb_confirm(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
-    entries = _pending.pop(user_id, None)
-    if not entries:
+    items = _pending.pop(user_id, None)
+    if not items:
         await callback.answer("Нет записей для сохранения")
         return
 
-    for entry in entries:
-        await save_entry(entry)
-    logger.info("user=%s подтвердил %d записей", user_id, len(entries))
+    entry = _food_entry_from_items(user_id, items)
+    await save_entry(entry)
+    logger.info("user=%s подтвердил %d продуктов", user_id, len(items))
 
-    total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
+    total = entry.nutrition
     lines: list[str] = []
-    for i, e in enumerate(entries, 1):
-        lines.append(f"{i}. {e.description} — {e.nutrition.calories:.0f} ккал")
-        total.calories += e.nutrition.calories
-        total.protein += e.nutrition.protein
-        total.fat += e.nutrition.fat
-        total.carbs += e.nutrition.carbs
+    for i, item in enumerate(items, 1):
+        lines.append(
+            f"{i}. {_product_title(item)}\n"
+            f"🔥 {item.nutrition.calories:.0f} ккал | "
+            f"🥩 {item.nutrition.protein:.0f}Б | "
+            f"🧈 {item.nutrition.fat:.0f}Ж | "
+            f"🍞 {item.nutrition.carbs:.0f}У"
+        )
 
     text = (
         f"✅ <b>Записано!</b>\n\n"
@@ -820,29 +898,17 @@ async def handle_food(message: types.Message) -> None:
     # Автоснимок профиля при первом сообщении за день
     await _ensure_daily_snapshot(user_id)
 
-    # If user has pending entries, skip intent detection — treat as food context update
+    # If user has pending items, treat new text only as items to append.
     if user_id in _pending:
         await message.answer("Обрабатываю...")
-        current_descriptions = [e.description for e in _pending[user_id]]
         try:
-            items = await parse_food_with_context(message.text, current_descriptions)
+            items = await parse_food_text(message.text)
         except (ServerError, ClientError):
             logger.warning("Gemini ошибка для user=%s", user_id)
             await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
             return
 
-        _pending[user_id] = [
-            FoodEntry(
-                user_id=user_id,
-                description=p.description,
-                nutrition=NutritionData(
-                    calories=p.calories, protein=p.protein,
-                    fat=p.fat, carbs=p.carbs,
-                ),
-                created_at=datetime.now(),
-            )
-            for p in items
-        ]
+        _pending[user_id].extend(_product_from_parsed(p) for p in items)
         await message.answer(
             _build_pending_text(_pending[user_id]),
             reply_markup=_build_pending_keyboard(_pending[user_id]),
@@ -904,17 +970,8 @@ async def handle_food(message: types.Message) -> None:
         await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
         return
 
-    entry = FoodEntry(
-        user_id=user_id,
-        description=parsed.description,
-        nutrition=NutritionData(
-            calories=parsed.calories, protein=parsed.protein,
-            fat=parsed.fat, carbs=parsed.carbs,
-        ),
-        created_at=datetime.now(),
-    )
-    _pending[user_id] = [entry]
-    logger.info("user=%s pending: %s", user_id, entry.description)
+    _pending[user_id] = [_product_from_parsed(item) for item in parsed]
+    logger.info("user=%s pending продуктов: %d", user_id, len(_pending[user_id]))
 
     await message.answer(
         _build_pending_text(_pending[user_id]),
