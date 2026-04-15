@@ -1,6 +1,4 @@
 import logging
-from dataclasses import dataclass
-import re
 
 from datetime import date
 
@@ -8,81 +6,51 @@ from google import genai
 from pydantic import BaseModel
 
 from app.config import settings
-from app.models import NutritionData
 
 logger = logging.getLogger(__name__)
 
 _client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
-@dataclass(frozen=True)
-class ReferenceProduct:
-    short_description: str
-    aliases: tuple[str, ...]
-    default_grams: float | None
-    calories_per_100g: float
-    protein_per_100g: float
-    fat_per_100g: float
-    carbs_per_100g: float
+# ── Справочник продуктов (передаётся в промпт как контекст для Gemini) ──
+
+REFERENCE_PRODUCTS: dict[str, dict] = {
+    "Хлеб": {"default_grams": 45, "cal": 265, "p": 9.0, "f": 3.2, "c": 49.0},
+    "Сыр": {"default_grams": 30, "cal": 360, "p": 24.0, "f": 30.0, "c": 0.0},
+    "Рис варёный": {"default_grams": 150, "cal": 116, "p": 2.5, "f": 0.3, "c": 24.9},
+    "Куриная грудка": {"default_grams": 150, "cal": 165, "p": 23.0, "f": 3.6, "c": 0.0},
+    "Банан": {"default_grams": 120, "cal": 89, "p": 1.1, "f": 0.3, "c": 22.8},
+    "Яблоко": {"default_grams": 180, "cal": 52, "p": 0.3, "f": 0.2, "c": 14.0},
+    "Яйцо": {"default_grams": 50, "cal": 143, "p": 12.6, "f": 9.5, "c": 0.7},
+    "Молоко": {"default_grams": 250, "cal": 52, "p": 2.8, "f": 2.5, "c": 4.7},
+    "Творог 0%": {"default_grams": 180, "cal": 71, "p": 16.5, "f": 0.0, "c": 1.3},
+    "Творог 5%": {"default_grams": 180, "cal": 121, "p": 17.2, "f": 5.0, "c": 1.8},
+    "Творог 9%": {"default_grams": 180, "cal": 159, "p": 16.7, "f": 9.0, "c": 2.0},
+    "Кофе": {"default_grams": 250, "cal": 2, "p": 0.3, "f": 0.0, "c": 0.2},
+    "Чай": {"default_grams": 250, "cal": 1, "p": 0.0, "f": 0.0, "c": 0.2},
+    "Протеин с водой (bombbar)": {"default_grams": 300, "cal": 40, "p": 7.3, "f": 0.0, "c": 0.0},
+    "Exponenta": {"default_grams": 250, "cal": 60, "p": 12.0, "f": 0.0, "c": 0.0},
+    "Гамбургер McDonald's": {"default_grams": 102, "cal": 250, "p": 11.9, "f": 10.0, "c": 30.0},
+    "Дабл чизбургер McDonald's": {"default_grams": 167, "cal": 272, "p": 15.0, "f": 15.0, "c": 19.2},
+}
 
 
-REFERENCE_PRODUCTS: tuple[ReferenceProduct, ...] = (
-    ReferenceProduct("Хлеб", ("хлеб", "хлеб белый", "батон"), 45.0, 265.0, 9.0, 3.2, 49.0),
-    ReferenceProduct("Сыр", ("сыр", "сыр российский", "сыр твердый", "твёрдый сыр"), 30.0, 360.0, 24.0, 30.0, 0.0),
-    ReferenceProduct("Рис", ("рис", "рис вареный", "рис варёный"), 150.0, 116.0, 2.5, 0.3, 24.9),
-    ReferenceProduct("Курица", ("курица", "куриная грудка", "грудка куриная", "куриное филе"), 150.0, 165.0, 23.0, 3.6, 0.0),
-    ReferenceProduct("Банан", ("банан",), 120.0, 89.0, 1.1, 0.3, 22.8),
-    ReferenceProduct("Яблоко", ("яблоко",), 180.0, 52.0, 0.3, 0.2, 14.0),
-    ReferenceProduct("Яйцо", ("яйцо", "яйца"), 50.0, 143.0, 12.6, 9.5, 0.7),
-    ReferenceProduct("Молоко", ("молоко",), 250.0, 52.0, 2.8, 2.5, 4.7),
-    ReferenceProduct("Творог 0%", ("творог 0", "творог 0%", "обезжиренный творог"), 180.0, 71.0, 16.5, 0.0, 1.3),
-    ReferenceProduct("Творог 5%", ("творог 5", "творог 5%"), 180.0, 121.0, 17.2, 5.0, 1.8),
-    ReferenceProduct("Творог 9%", ("творог 9", "творог 9%"), 180.0, 159.0, 16.7, 9.0, 2.0),
-    ReferenceProduct("Кофе", ("кофе", "американо", "эспрессо", "капучино"), 250.0, 2.0, 0.3, 0.0, 0.2),
-    ReferenceProduct("Чай", ("чай",), 250.0, 1.0, 0.0, 0.0, 0.2),
-    ReferenceProduct(
-        "Протеин с водой",
-        ("bombbar протеин", "bombbar protein", "протеин bombbar", "протеин с водой", "protein with water"),
-        300.0,
-        40.0,
-        7.3,
-        0.0,
-        0.0,
-    ),
-    ReferenceProduct(
-        "Exponenta",
-        (
-            "exponenta",
-            "экспонента",
-            "exponenta high protein",
-            "exponenta высокобелковый кисломолочный напиток",
-            "высокобелковый кисломолочный напиток exponenta",
-        ),
-        250.0,
-        60.0,
-        12.0,
-        0.0,
-        0.0,
-    ),
-    ReferenceProduct(
-        "Гамбургер McDonald's",
-        ("гамбургер макдональдс", "гамбургер mcdonalds", "mcdonalds hamburger", "mcdonalds hamburger", "гамбургер mc donalds"),
-        102.0,
-        250.0,
-        11.9,
-        10.0,
-        30.0,
-    ),
-    ReferenceProduct(
-        "Дабл чизбургер",
-        ("дабл чизбургер", "double cheeseburger", "макдональдс дабл чизбургер", "mcdonalds double cheeseburger"),
-        167.0,
-        271.9,
-        15.0,
-        15.0,
-        19.2,
-    ),
-)
+def _build_reference_block() -> str:
+    lines = ["Справочник продуктов (КБЖУ на 100 г, default_grams — типичная порция):"]
+    for name, d in REFERENCE_PRODUCTS.items():
+        lines.append(
+            f"- {name}: {d['cal']} ккал, {d['p']}Б {d['f']}Ж {d['c']}У на 100г, "
+            f"порция {d['default_grams']}г"
+        )
+    lines.append(
+        "\nИспользуй этот справочник для оценки КБЖУ, если продукт совпадает. "
+        "Пересчитывай на указанный вес. "
+        "Но если пользователь ЯВНО указал свои калории — используй ЕГО число, не справочное.\n"
+    )
+    return "\n".join(lines)
+
+
+REFERENCE_BLOCK = _build_reference_block()
 
 
 # ── Response schemas ────────────────────────────────────────
@@ -100,6 +68,7 @@ class ParsedProductItem(BaseModel):
 
 class ParsedFoodResponse(BaseModel):
     items: list[ParsedProductItem]
+    date: str | None = None  # YYYY-MM-DD, None = сегодня
 
 
 class ParsedIntent(BaseModel):
@@ -117,31 +86,32 @@ class ParsedWorkout(BaseModel):
 
 
 FOOD_PROMPT = (
-    "Пользователь описал что он ел. Разбери КАЖДЫЙ продукт ОТДЕЛЬНО.\n\n"
+    "Пользователь описал что он ел. Разбери на отдельные блюда/приёмы пищи.\n\n"
+    "Сегодня: {today}.\n\n"
     "Правила:\n"
-    "1. Каждый продукт — отдельный элемент в списке items.\n"
-    "2. Для каждого продукта верни:\n"
-    "   - description: полное описание (например 'Хлеб белый 45 г')\n"
-    "   - short_description: короткое название (например 'Хлеб')\n"
+    "1. Каждое БЛЮДО — отдельный элемент в списке items.\n"
+    "   - Если продукты составляют одно блюдо (например 'хлеб с сыром', 'рис с курицей', "
+    "'макароны с соусом'), верни их КАК ОДНО блюдо с суммарным КБЖУ.\n"
+    "   - Разделяй на отдельные элементы только действительно разные блюда "
+    "(например 'суп и салат' — два элемента).\n"
+    "2. Для каждого блюда верни:\n"
+    "   - description: полное описание (например 'Хлеб с сыром')\n"
+    "   - short_description: короткое название (например 'Хлеб с сыром')\n"
     "   - grams: вес в граммах (число) или null, если вес неважен/неуместен\n"
     "   - calories, protein, fat, carbs: КБЖУ\n\n"
-    "3. Если пользователь указал вес (граммы) — рассчитай КБЖУ ТОЧНО НА ЭТОТ ВЕС.\n"
-    "   Никогда не возвращай КБЖУ на 100 г, если в grams указано другое значение.\n"
-    "   calories, protein, fat, carbs должны соответствовать именно указанной порции, а не справочным данным на 100 г.\n"
-    "4. Если пользователь указал калории только для одного продукта — используй их только для этого продукта, "
-    "а остальные продукты оценивай самостоятельно.\n"
-    "5. Если пользователь указал калории — calories должны совпадать с указанным значением, "
-    "остальные нутриенты оцени реалистично.\n"
+    "3. САМОЕ ВАЖНОЕ: если пользователь указал калории (ккал) — calories ДОЛЖНЫ ТОЧНО совпадать "
+    "с указанным числом. Никогда не меняй калории, которые пользователь указал сам. "
+    "Остальные нутриенты (protein, fat, carbs) оцени реалистично.\n"
+    "4. Если пользователь указал вес (граммы) — рассчитай КБЖУ на этот вес.\n"
+    "5. Если пользователь указал калории только для одного продукта — используй их только для этого продукта, "
+    "а остальные оценивай самостоятельно.\n"
     "6. Если ничего не указано — используй типичную порцию и оцени КБЖУ.\n"
-    "7. Для штучных продуктов (яйцо, банан, яблоко) — считай за 1 штуку. "
-    "Можно указать типичный вес, если он уместен.\n"
+    "7. Для штучных продуктов (яйцо, банан, яблоко) — считай за 1 штуку.\n"
     "8. Для напитков (кофе, чай, сок) — считай стандартную чашку/стакан. "
-    "Если вес в граммах неважен для отображения, верни grams=null.\n"
-    "9. Не смешивай несколько продуктов в один элемент, даже если они написаны в одной фразе.\n"
-    "10. short_description должен быть коротким и удобным для списка: "
-    "например 'Хлеб', 'Сыр', 'Курица', 'Кофе'.\n\n"
-    "ВАЖНО: обрабатывай каждый продукт независимо. Если у одного продукта указаны "
-    "ккал или граммы, а у другого нет — это нормально, рассчитай каждый по своим данным.\n\n"
+    "Если вес в граммах неважен, верни grams=null.\n"
+    "9. short_description должен быть коротким и удобным для списка.\n"
+    "10. Если пользователь указал дату (вчера, позавчера, 5 апреля и т.д.) — "
+    "верни date в формате YYYY-MM-DD. Если дата не указана — верни date=null.\n\n"
     "Текст пользователя:\n"
 )
 
@@ -149,20 +119,23 @@ CONTEXT_FOOD_PROMPT = (
     "Пользователь ведёт список еды. Вот текущий список:\n"
     "{current}\n\n"
     "Пользователь написал: \"{text}\"\n\n"
-    "Верни обновлённый полный список продуктов.\n"
-    "Пользователь может добавлять, убирать или заменять продукты.\n\n"
+    "Сегодня: {today}.\n\n"
+    "Верни обновлённый полный список блюд.\n"
+    "Пользователь может добавлять, убирать или заменять блюда.\n\n"
     "Правила:\n"
-    "1. Каждый продукт — отдельный элемент в списке items.\n"
-    "2. Для каждого продукта верни: description, short_description, grams, "
+    "1. Каждое БЛЮДО — отдельный элемент в списке items.\n"
+    "   Если продукты составляют одно блюдо (например 'хлеб с сыром'), "
+    "верни их как одно блюдо с суммарным КБЖУ.\n"
+    "2. Для каждого блюда верни: description, short_description, grams, "
     "calories, protein, fat, carbs.\n"
-    "3. Если указан вес — рассчитай КБЖУ ТОЧНО НА ЭТОТ ВЕС.\n"
-    "   Никогда не возвращай КБЖУ на 100 г, если в grams указано другое значение.\n"
-    "   calories, protein, fat, carbs должны соответствовать именно указанной порции, а не справочным данным на 100 г.\n"
-    "4. Если указаны калории только для части продуктов — применяй их только к этим продуктам.\n"
+    "3. САМОЕ ВАЖНОЕ: если пользователь указал калории (ккал) — calories ДОЛЖНЫ ТОЧНО совпадать "
+    "с указанным числом. Никогда не меняй калории пользователя.\n"
+    "4. Если указан вес — рассчитай КБЖУ на этот вес.\n"
     "5. Если ничего не указано — используй типичную порцию.\n"
-    "6. Если вес неважен или неуместен для отображения, верни grams=null.\n"
-    "7. Обрабатывай каждый продукт независимо.\n"
-    "8. Верни полный итоговый список после изменений пользователя, а не только новые продукты.\n"
+    "6. Если вес неважен, верни grams=null.\n"
+    "7. Верни полный итоговый список после изменений пользователя.\n"
+    "8. Если пользователь указал дату (вчера, позавчера и т.д.) — "
+    "верни date в формате YYYY-MM-DD. Если дата не указана — верни date=null.\n"
 )
 
 INTENT_PROMPT = (
@@ -202,87 +175,6 @@ WORKOUT_PROMPT = (
 # ── Functions ───────────────────────────────────────────────
 
 
-def _normalize_product_name(text: str) -> str:
-    normalized = text.lower().replace("ё", "е")
-    normalized = re.sub(r"[^a-zа-я0-9\s]", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
-
-
-def _find_reference_product(text: str) -> ReferenceProduct | None:
-    haystack = _normalize_product_name(text)
-    for product in REFERENCE_PRODUCTS:
-        for alias in product.aliases:
-            alias_normalized = _normalize_product_name(alias)
-            if alias_normalized and alias_normalized in haystack:
-                return product
-    return None
-
-
-def _format_reference_block(text: str) -> str:
-    matched: list[ReferenceProduct] = []
-    normalized_text = _normalize_product_name(text)
-    for product in REFERENCE_PRODUCTS:
-        if any(_normalize_product_name(alias) in normalized_text for alias in product.aliases):
-            matched.append(product)
-
-    if not matched:
-        return ""
-
-    lines = [
-        "\nСправочные продукты для этого сообщения. Используй их как приоритетный источник:\n",
-    ]
-    for product in matched:
-        default_grams = "null" if product.default_grams is None else f"{product.default_grams:.0f}"
-        lines.append(
-            f"- {product.short_description}: aliases={', '.join(product.aliases)}; "
-            f"default_grams={default_grams}; "
-            f"per_100g={product.calories_per_100g:.0f} ккал, {product.protein_per_100g:.1f} Б, "
-            f"{product.fat_per_100g:.1f} Ж, {product.carbs_per_100g:.1f} У"
-        )
-    lines.append(
-        "Если продукт найден в этом справочнике, используй его default_grams и per_100g как источник истины. "
-        "Если пользователь указал свой вес, пересчитай строго от справочных per_100g на этот вес.\n"
-    )
-    return "\n".join(lines)
-
-
-def _nutrition_from_reference(product: ReferenceProduct, grams: float) -> tuple[float, float, float, float]:
-    ratio = grams / 100.0
-    return (
-        product.calories_per_100g * ratio,
-        product.protein_per_100g * ratio,
-        product.fat_per_100g * ratio,
-        product.carbs_per_100g * ratio,
-    )
-
-
-def _normalize_item_with_reference(item: ParsedProductItem) -> ParsedProductItem:
-    reference = _find_reference_product(f"{item.short_description} {item.description}")
-    if not reference:
-        return item
-
-    grams = item.grams if item.grams is not None else reference.default_grams
-    if grams is None:
-        return item
-
-    calories, protein, fat, carbs = _nutrition_from_reference(reference, grams)
-    return ParsedProductItem(
-        description=item.description,
-        short_description=reference.short_description,
-        grams=grams,
-        calories=round(calories, 1),
-        protein=round(protein, 1),
-        fat=round(fat, 1),
-        carbs=round(carbs, 1),
-    )
-
-
-def _normalize_items_with_reference(items: list[ParsedProductItem]) -> list[ParsedProductItem]:
-    normalized = [_normalize_item_with_reference(item) for item in items]
-    logger.info("Нормализовано по справочнику: %s", [i.model_dump() for i in normalized])
-    return normalized
-
-
 async def parse_intent(text: str) -> ParsedIntent:
     logger.info("Определение намерения: %s", text)
     response = await _client.aio.models.generate_content(
@@ -307,19 +199,20 @@ async def generate_off_topic_reply(text: str) -> str:
     return response.text
 
 
-async def parse_food_text(text: str) -> list[ParsedProductItem]:
+async def parse_food_text(text: str) -> ParsedFoodResponse:
     logger.info("Парсинг текста через Gemini: %s", text)
+    prompt = FOOD_PROMPT.format(today=date.today().isoformat())
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=FOOD_PROMPT + _format_reference_block(text) + text,
+        contents=REFERENCE_BLOCK + "\n" + prompt + text,
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedFoodResponse,
         ),
     )
     result = ParsedFoodResponse.model_validate_json(response.text)
-    logger.info("Gemini результат: %s", [i.model_dump() for i in result.items])
-    return _normalize_items_with_reference(result.items)
+    logger.info("Gemini результат: %s, date=%s", [i.model_dump() for i in result.items], result.date)
+    return result
 
 
 async def parse_workout_text(text: str) -> ParsedWorkout:
@@ -337,17 +230,18 @@ async def parse_workout_text(text: str) -> ParsedWorkout:
     return result
 
 
-async def parse_food_with_context(text: str, current_items: list[str]) -> list[ParsedProductItem]:
+async def parse_food_with_context(text: str, current_items: list[str]) -> ParsedFoodResponse:
     current = "\n".join(f"- {item}" for item in current_items) if current_items else "(пусто)"
     logger.info("Парсинг с контекстом: %s | текущий список: %s", text, current_items)
+    prompt = CONTEXT_FOOD_PROMPT.format(current=current, text=text, today=date.today().isoformat())
     response = await _client.aio.models.generate_content(
         model="gemini-2.5-flash-lite",
-        contents=CONTEXT_FOOD_PROMPT.format(current=current, text=text) + _format_reference_block(text),
+        contents=REFERENCE_BLOCK + "\n" + prompt,
         config=genai.types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=ParsedFoodResponse,
         ),
     )
     result = ParsedFoodResponse.model_validate_json(response.text)
-    logger.info("Gemini контекстный результат: %s", [i.model_dump() for i in result.items])
-    return _normalize_items_with_reference(result.items)
+    logger.info("Gemini контекстный результат: %s, date=%s", [i.model_dump() for i in result.items], result.date)
+    return result

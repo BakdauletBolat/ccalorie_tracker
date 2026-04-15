@@ -28,12 +28,14 @@ from app.database import (
     upsert_user_profile,
 )
 from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, ProductItem, UserProfile, WorkoutEntry
-from app.parser import ParsedProductItem, generate_off_topic_reply, parse_food_text, parse_intent, parse_workout_text
+from app.parser import ParsedProductItem, ParsedFoodResponse, generate_off_topic_reply, parse_food_text, parse_intent, parse_workout_text
 
 logger = logging.getLogger(__name__)
 
 # Pending products awaiting user confirmation: user_id -> list[ProductItem]
 _pending: dict[int, list[ProductItem]] = {}
+# Pending date for food entry: user_id -> date (None = today)
+_pending_date: dict[int, date | None] = {}
 
 bot = Bot(token=settings.TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -88,7 +90,7 @@ async def cmd_start(message: types.Message, state: FSMContext) -> None:
     await state.set_state(OnboardingStates.waiting_gender)
     await message.answer(
         f"👋 Привет, {name}!\n\n"
-        "Я — КалорийБот 🍽\n"
+        "Я — CALorie Tracker 🍽\n"
         "Для начала давай заполним твой профиль.\n\n"
         "Выбери пол:",
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
@@ -726,17 +728,21 @@ def _product_from_parsed(parsed_item: ParsedProductItem) -> ProductItem:
     )
 
 
-def _food_entry_from_items(user_id: int, items: list[ProductItem]) -> FoodEntry:
+def _food_entry_from_items(user_id: int, items: list[ProductItem], entry_date: date | None = None) -> FoodEntry:
     total = _sum_nutrition(items)
     descriptions = [item.description for item in items]
     short_descriptions = [item.short_description or item.description for item in items]
+    if entry_date and entry_date != date.today():
+        created_at = datetime.combine(entry_date, datetime.min.time())
+    else:
+        created_at = datetime.now()
     return FoodEntry(
         user_id=user_id,
         description=", ".join(descriptions),
         short_description=", ".join(short_descriptions),
         items=items,
         nutrition=total,
-        created_at=datetime.now(),
+        created_at=created_at,
     )
 
 
@@ -775,7 +781,7 @@ def _build_entry_view_text(entry: FoodEntry) -> str:
     )
 
 
-def _build_pending_text(entries: list[ProductItem]) -> str:
+def _build_pending_text(entries: list[ProductItem], entry_date: date | None = None) -> str:
     total = NutritionData(calories=0, protein=0, fat=0, carbs=0)
     lines: list[str] = []
     for i, item in enumerate(entries, 1):
@@ -788,9 +794,13 @@ def _build_pending_text(entries: list[ProductItem]) -> str:
         )
     total = _sum_nutrition(entries)
 
+    date_label = ""
+    if entry_date and entry_date != date.today():
+        date_label = f"\n📅 Дата: {entry_date.strftime('%d.%m.%Y')}\n"
+
     items_text = "\n\n".join(lines)
     return (
-        f"🍽 <b>Приём пищи</b>\n\n"
+        f"🍽 <b>Приём пищи</b>{date_label}\n\n"
         f"{items_text}\n\n"
         f"<b>Итого:</b>\n"
         f"🔥 {total.calories:.0f} ккал | "
@@ -831,12 +841,13 @@ async def cb_pending_delete(callback: types.CallbackQuery) -> None:
 
     if not entries:
         _pending.pop(user_id, None)
+        _pending_date.pop(user_id, None)
         await callback.message.edit_text("Список очищен.")  # type: ignore[union-attr]
         await callback.answer()
         return
 
     await callback.message.edit_text(  # type: ignore[union-attr]
-        _build_pending_text(entries),
+        _build_pending_text(entries, _pending_date.get(user_id)),
         reply_markup=_build_pending_keyboard(entries),
         parse_mode="HTML",
     )
@@ -847,11 +858,12 @@ async def cb_pending_delete(callback: types.CallbackQuery) -> None:
 async def cb_confirm(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
     items = _pending.pop(user_id, None)
+    entry_date = _pending_date.pop(user_id, None)
     if not items:
         await callback.answer("Нет записей для сохранения")
         return
 
-    entry = _food_entry_from_items(user_id, items)
+    entry = _food_entry_from_items(user_id, items, entry_date)
     await save_entry(entry)
     logger.info("user=%s подтвердил %d продуктов", user_id, len(items))
 
@@ -866,8 +878,12 @@ async def cb_confirm(callback: types.CallbackQuery) -> None:
             f"🍞 {item.nutrition.carbs:.0f}У"
         )
 
+    date_label = ""
+    if entry_date and entry_date != date.today():
+        date_label = f"\n📅 Дата: {entry_date.strftime('%d.%m.%Y')}"
+
     text = (
-        f"✅ <b>Записано!</b>\n\n"
+        f"✅ <b>Записано!</b>{date_label}\n\n"
         f"{chr(10).join(lines)}\n\n"
         f"🔥 {total.calories:.0f} ккал | "
         f"🥩 {total.protein:.0f} Б | "
@@ -882,6 +898,7 @@ async def cb_confirm(callback: types.CallbackQuery) -> None:
 async def cb_cancel(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
     _pending.pop(user_id, None)
+    _pending_date.pop(user_id, None)
     logger.info("user=%s отменил pending", user_id)
     await callback.message.edit_text("🚫 Отменено.")  # type: ignore[union-attr]
     await callback.answer()
@@ -902,15 +919,17 @@ async def handle_food(message: types.Message) -> None:
     if user_id in _pending:
         await message.answer("Обрабатываю...")
         try:
-            items = await parse_food_text(message.text)
+            result = await parse_food_text(message.text)
         except (ServerError, ClientError):
             logger.warning("Gemini ошибка для user=%s", user_id)
             await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
             return
 
-        _pending[user_id].extend(_product_from_parsed(p) for p in items)
+        if result.date:
+            _pending_date[user_id] = date.fromisoformat(result.date)
+        _pending[user_id].extend(_product_from_parsed(p) for p in result.items)
         await message.answer(
-            _build_pending_text(_pending[user_id]),
+            _build_pending_text(_pending[user_id], _pending_date.get(user_id)),
             reply_markup=_build_pending_keyboard(_pending[user_id]),
             parse_mode="HTML",
         )
@@ -964,17 +983,21 @@ async def handle_food(message: types.Message) -> None:
     await message.answer("Обрабатываю...")
 
     try:
-        parsed = await parse_food_text(message.text)
+        result = await parse_food_text(message.text)
     except (ServerError, ClientError):
         logger.warning("Gemini ошибка для user=%s", user_id)
         await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
         return
 
-    _pending[user_id] = [_product_from_parsed(item) for item in parsed]
-    logger.info("user=%s pending продуктов: %d", user_id, len(_pending[user_id]))
+    _pending[user_id] = [_product_from_parsed(item) for item in result.items]
+    if result.date:
+        _pending_date[user_id] = date.fromisoformat(result.date)
+    else:
+        _pending_date.pop(user_id, None)
+    logger.info("user=%s pending продуктов: %d, date=%s", user_id, len(_pending[user_id]), result.date)
 
     await message.answer(
-        _build_pending_text(_pending[user_id]),
+        _build_pending_text(_pending[user_id], _pending_date.get(user_id)),
         reply_markup=_build_pending_keyboard(_pending[user_id]),
         parse_mode="HTML",
     )
