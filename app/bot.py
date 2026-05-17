@@ -28,7 +28,7 @@ from app.database import (
     upsert_user_profile,
 )
 from app.models import DailyProfileSnapshot, FoodEntry, NutritionData, ProductItem, UserProfile, WorkoutEntry
-from app.parser import ParsedProductItem, ParsedFoodResponse, generate_off_topic_reply, parse_food_text, parse_intent, parse_workout_text
+from app.parser import ParsedFoodResponse, generate_off_topic_reply, parse_food_text, parse_intent, parse_workout_text
 
 logger = logging.getLogger(__name__)
 
@@ -714,16 +714,16 @@ def _product_title(item: ProductItem) -> str:
     return title
 
 
-def _product_from_parsed(parsed_item: ParsedProductItem) -> ProductItem:
+def _product_from_parsed(parsed: ParsedFoodResponse) -> ProductItem:
     return ProductItem(
-        description=parsed_item.description,
-        short_description=parsed_item.short_description,
-        grams=parsed_item.grams,
+        description=parsed.description,
+        short_description=parsed.short_description,
+        grams=parsed.grams,
         nutrition=NutritionData(
-            calories=parsed_item.calories,
-            protein=parsed_item.protein,
-            fat=parsed_item.fat,
-            carbs=parsed_item.carbs,
+            calories=parsed.calories,
+            protein=parsed.protein,
+            fat=parsed.fat,
+            carbs=parsed.carbs,
         ),
     )
 
@@ -927,7 +927,7 @@ async def handle_food(message: types.Message) -> None:
 
         if result.date:
             _pending_date[user_id] = date.fromisoformat(result.date)
-        _pending[user_id].extend(_product_from_parsed(p) for p in result.items)
+        _pending[user_id].append(_product_from_parsed(result))
         await message.answer(
             _build_pending_text(_pending[user_id], _pending_date.get(user_id)),
             reply_markup=_build_pending_keyboard(_pending[user_id]),
@@ -989,7 +989,7 @@ async def handle_food(message: types.Message) -> None:
         await message.answer("Сервис перегружен, попробуйте через 30 секунд.")
         return
 
-    _pending[user_id] = [_product_from_parsed(item) for item in result.items]
+    _pending[user_id] = [_product_from_parsed(result)]
     if result.date:
         _pending_date[user_id] = date.fromisoformat(result.date)
     else:
