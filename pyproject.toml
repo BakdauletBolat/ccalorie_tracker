@@ -9,4 +9,16 @@ dependencies = [
     "motor",
     "pydantic-settings",
     "google-genai",
+    "zxing-cpp>=3.0.0",
+    "pillow>=12.2.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

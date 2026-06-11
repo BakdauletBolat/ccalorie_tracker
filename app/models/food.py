@@ -26,24 +26,9 @@ class FoodEntry(BaseModel):
     created_at: datetime
 
 
-class UserProfile(BaseModel):
+class PendingMeal(BaseModel):
+    """Продукты, ожидающие подтверждения пользователем."""
+
     user_id: int
-    gender: str  # "male" / "female"
-    weight: float  # кг
-    height: float  # см
-    age: int
-
-
-class DailyProfileSnapshot(BaseModel):
-    user_id: int
-    weight: float
-    height: float
-    age: int
-    date: date
-
-
-class WorkoutEntry(BaseModel):
-    user_id: int
-    calories: float
-    description: str
-    created_at: datetime
+    items: list[ProductItem] = Field(default_factory=list)
+    entry_date: date | None = None  # None = сегодня
