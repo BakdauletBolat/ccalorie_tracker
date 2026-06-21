@@ -1,228 +1,44 @@
-2026-06-11 20:20:30 | INFO     | __main__ | Запуск приложения
-2026-06-11 20:20:30 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 20:20:30 | INFO     | __main__ | MongoDB подключена
-2026-06-11 20:20:30 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 20:20:30 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:20:40 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:20:40 | INFO     | app.repositories.food_repo | Загружено 0 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:20:40 | INFO     | aiogram.event | Update id=249441400 is handled. Duration 492 ms by bot id=8691141264
-2026-06-11 20:20:49 | INFO     | app.bot.routers.onboarding | user=1096177957 вызвал /start
-2026-06-11 20:20:49 | INFO     | aiogram.event | Update id=249441401 is handled. Duration 152 ms by bot id=8691141264
-2026-06-11 20:20:52 | INFO     | aiogram.event | Update id=249441402 is handled. Duration 337 ms by bot id=8691141264
-2026-06-11 20:20:59 | INFO     | aiogram.event | Update id=249441403 is handled. Duration 142 ms by bot id=8691141264
-2026-06-11 20:21:16 | INFO     | aiogram.event | Update id=249441404 is handled. Duration 144 ms by bot id=8691141264
-2026-06-11 20:21:22 | INFO     | app.repositories.profile_repo | Профиль сохранён для user=1096177957
-2026-06-11 20:21:22 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-11
-2026-06-11 20:21:22 | INFO     | aiogram.event | Update id=249441405 is handled. Duration 177 ms by bot id=8691141264
-2026-06-11 20:21:44 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Сьел дурум
-2026-06-11 20:21:44 | INFO     | app.llm.gemini | Определение намерения: Сьел дурум
-2026-06-11 20:21:44 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:21:45 | INFO     | app.llm.gemini | Намерение: {'intent': 'food', 'date': None}
-2026-06-11 20:21:45 | INFO     | app.llm.gemini | Парсинг текста через Gemini: Сьел дурум
-2026-06-11 20:21:45 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:21:46 | INFO     | app.llm.gemini | Gemini результат: {'description': 'Дурум (турецкая шаурма)', 'short_description': 'Дурум', 'grams': 350.0, 'calories': 650.0, 'protein': 25.0, 'fat': 30.0, 'carbs': 70.0}, date=2026-06-11
-2026-06-11 20:21:46 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=2026-06-11
-2026-06-11 20:21:46 | INFO     | aiogram.event | Update id=249441406 is handled. Duration 2192 ms by bot id=8691141264
-2026-06-11 20:21:49 | INFO     | app.repositories.food_repo | Сохранена запись id=6a2ad28dc0924b729f55e318 user=1096177957: Дурум (турецкая шаурма)
-2026-06-11 20:21:49 | INFO     | app.services.food_service | user=1096177957 подтвердил 1 продуктов
-2026-06-11 20:21:49 | INFO     | aiogram.event | Update id=249441407 is handled. Duration 293 ms by bot id=8691141264
-2026-06-11 20:21:51 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:21:51 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:21:51 | INFO     | aiogram.event | Update id=249441408 is handled. Duration 156 ms by bot id=8691141264
-2026-06-11 20:21:55 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:21:55 | INFO     | aiogram.event | Update id=249441409 is handled. Duration 163 ms by bot id=8691141264
-2026-06-11 20:21:58 | INFO     | app.repositories.food_repo | Загружено 0 записей для user=1096177957 за 2026-06-01..2026-06-07
-2026-06-11 20:21:58 | INFO     | aiogram.event | Update id=249441410 is handled. Duration 275 ms by bot id=8691141264
-2026-06-11 20:21:59 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:21:59 | INFO     | aiogram.event | Update id=249441411 is handled. Duration 329 ms by bot id=8691141264
-2026-06-11 20:22:14 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: /help
-2026-06-11 20:22:14 | INFO     | app.llm.gemini | Определение намерения: /help
-2026-06-11 20:22:14 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:22:14 | INFO     | app.llm.gemini | Намерение: {'intent': 'other', 'date': None}
-2026-06-11 20:22:14 | INFO     | app.llm.gemini | Генерация off-topic ответа на: /help
-2026-06-11 20:22:14 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:22:15 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: /help
-2026-06-11 20:22:15 | INFO     | app.llm.gemini | Определение намерения: /help
-2026-06-11 20:22:15 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:22:15 | INFO     | aiogram.event | Update id=249441412 is handled. Duration 1619 ms by bot id=8691141264
-2026-06-11 20:22:16 | INFO     | app.llm.gemini | Намерение: {'intent': 'other', 'date': None}
-2026-06-11 20:22:16 | INFO     | app.llm.gemini | Генерация off-topic ответа на: /help
-2026-06-11 20:22:16 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:22:17 | INFO     | aiogram.event | Update id=249441413 is handled. Duration 1756 ms by bot id=8691141264
-2026-06-11 20:29:15 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 20:29:15 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:29:15 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 20:29:15 | INFO     | __main__ | Приложение остановлено
-2026-06-11 20:29:20 | INFO     | __main__ | Запуск приложения
-2026-06-11 20:29:20 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 20:29:20 | INFO     | __main__ | MongoDB подключена
-2026-06-11 20:29:20 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 20:29:20 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:29:36 | INFO     | aiogram.event | Update id=249441414 is handled. Duration 395 ms by bot id=8691141264
-2026-06-11 20:29:45 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:29:46 | INFO     | aiogram.event | Update id=249441415 is handled. Duration 178 ms by bot id=8691141264
-2026-06-11 20:29:57 | INFO     | aiogram.event | Update id=249441416 is handled. Duration 146 ms by bot id=8691141264
-2026-06-11 20:30:03 | INFO     | aiogram.event | Update id=249441417 is handled. Duration 331 ms by bot id=8691141264
-2026-06-11 20:30:11 | INFO     | app.repositories.profile_repo | Профиль сохранён для user=1096177957
-2026-06-11 20:30:11 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-11
-2026-06-11 20:30:11 | INFO     | aiogram.event | Update id=249441418 is handled. Duration 268 ms by bot id=8691141264
-2026-06-11 20:30:20 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:30:20 | INFO     | aiogram.event | Update id=249441419 is handled. Duration 184 ms by bot id=8691141264
-2026-06-11 20:30:23 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:30:23 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:30:23 | INFO     | aiogram.event | Update id=249441420 is handled. Duration 247 ms by bot id=8691141264
-2026-06-11 20:30:25 | INFO     | aiogram.event | Update id=249441421 is handled. Duration 192 ms by bot id=8691141264
-2026-06-11 20:30:29 | INFO     | aiogram.event | Update id=249441422 is handled. Duration 382 ms by bot id=8691141264
-2026-06-11 20:30:33 | INFO     | app.repositories.profile_repo | Профиль сохранён для user=1096177957
-2026-06-11 20:30:33 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-11
-2026-06-11 20:30:33 | INFO     | aiogram.event | Update id=249441423 is handled. Duration 440 ms by bot id=8691141264
-2026-06-11 20:30:36 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:30:36 | INFO     | aiogram.event | Update id=249441424 is handled. Duration 153 ms by bot id=8691141264
-2026-06-11 20:30:38 | INFO     | aiogram.event | Update id=249441425 is handled. Duration 156 ms by bot id=8691141264
-2026-06-11 20:30:40 | INFO     | aiogram.event | Update id=249441426 is handled. Duration 250 ms by bot id=8691141264
-2026-06-11 20:30:42 | INFO     | app.repositories.profile_repo | Профиль сохранён для user=1096177957
-2026-06-11 20:30:42 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-11
-2026-06-11 20:30:42 | INFO     | aiogram.event | Update id=249441427 is handled. Duration 281 ms by bot id=8691141264
-2026-06-11 20:30:44 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:30:44 | INFO     | aiogram.event | Update id=249441428 is handled. Duration 148 ms by bot id=8691141264
-2026-06-11 20:30:46 | INFO     | aiogram.event | Update id=249441429 is handled. Duration 169 ms by bot id=8691141264
-2026-06-11 20:30:48 | INFO     | aiogram.event | Update id=249441430 is handled. Duration 363 ms by bot id=8691141264
-2026-06-11 20:30:51 | INFO     | app.repositories.profile_repo | Профиль сохранён для user=1096177957
-2026-06-11 20:30:51 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-11
-2026-06-11 20:30:51 | INFO     | aiogram.event | Update id=249441431 is handled. Duration 280 ms by bot id=8691141264
-2026-06-11 20:37:01 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 20:37:01 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:37:01 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 20:37:01 | INFO     | __main__ | Приложение остановлено
-2026-06-11 20:37:05 | INFO     | __main__ | Запуск приложения
-2026-06-11 20:37:05 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 20:37:05 | INFO     | __main__ | MongoDB подключена
-2026-06-11 20:37:05 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 20:37:05 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:37:12 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-08..2026-06-14
-2026-06-11 20:37:12 | INFO     | aiogram.event | Update id=249441432 is handled. Duration 397 ms by bot id=8691141264
-2026-06-11 20:37:14 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:37:14 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:37:14 | INFO     | aiogram.event | Update id=249441433 is handled. Duration 155 ms by bot id=8691141264
-2026-06-11 20:37:36 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 20:37:38 | INFO     | app.llm.gemini | Парсинг фото еды (161446 байт), подпись: None
-2026-06-11 20:37:38 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:37:40 | INFO     | app.llm.gemini | Фото: products=0, date=2026-06-11
-2026-06-11 20:37:40 | INFO     | aiogram.event | Update id=249441434 is handled. Duration 3660 ms by bot id=8691141264
-2026-06-11 20:38:07 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 20:38:08 | INFO     | app.llm.gemini | Парсинг фото еды (77150 байт), подпись: None
-2026-06-11 20:38:08 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:38:10 | INFO     | app.llm.gemini | Фото: products=1, date=None
-2026-06-11 20:38:10 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=None
-2026-06-11 20:38:10 | INFO     | aiogram.event | Update id=249441435 is handled. Duration 2624 ms by bot id=8691141264
-2026-06-11 20:38:14 | INFO     | app.services.food_service | user=1096177957 отменил pending
-2026-06-11 20:38:14 | INFO     | aiogram.event | Update id=249441436 is handled. Duration 287 ms by bot id=8691141264
-2026-06-11 20:38:24 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Гречка
-2026-06-11 20:38:25 | INFO     | app.llm.gemini | Разбор сообщения: Гречка
-2026-06-11 20:38:25 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:38:25 | INFO     | app.llm.gemini | Разбор: intent=food, products=1, workout=None, date=None
-2026-06-11 20:38:25 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=None
-2026-06-11 20:38:26 | INFO     | aiogram.event | Update id=249441437 is handled. Duration 1226 ms by bot id=8691141264
-2026-06-11 20:38:27 | INFO     | app.services.food_service | user=1096177957 отменил pending
-2026-06-11 20:38:27 | INFO     | aiogram.event | Update id=249441438 is handled. Duration 259 ms by bot id=8691141264
-2026-06-11 20:38:32 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 20:38:32 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:38:32 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 20:38:32 | INFO     | __main__ | Приложение остановлено
-2026-06-11 20:44:52 | INFO     | __main__ | Запуск приложения
-2026-06-11 20:44:52 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 20:44:52 | INFO     | __main__ | MongoDB подключена
-2026-06-11 20:44:53 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 20:44:53 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 20:45:04 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:45:04 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:45:05 | INFO     | aiogram.event | Update id=249441439 is handled. Duration 414 ms by bot id=8691141264
-2026-06-11 20:45:12 | INFO     | aiogram.event | Update id=249441440 is handled. Duration 157 ms by bot id=8691141264
-2026-06-11 20:45:14 | INFO     | app.repositories.food_repo | Загружено 1 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:45:14 | INFO     | aiogram.event | Update id=249441441 is handled. Duration 308 ms by bot id=8691141264
-2026-06-11 20:45:16 | INFO     | app.repositories.favorite_repo | Избранное id=6a2ad80cc7c3515c3cefb53e user=1096177957: Дурум
-2026-06-11 20:45:16 | INFO     | aiogram.event | Update id=249441442 is handled. Duration 296 ms by bot id=8691141264
-2026-06-11 20:45:21 | INFO     | aiogram.event | Update id=249441443 is handled. Duration 144 ms by bot id=8691141264
-2026-06-11 20:45:22 | INFO     | aiogram.event | Update id=249441444 is handled. Duration 308 ms by bot id=8691141264
-2026-06-11 20:45:25 | INFO     | app.repositories.food_repo | Сохранена запись id=6a2ad81550cacd1f081ea3fe user=1096177957: Дурум (турецкая шаурма)
-2026-06-11 20:45:25 | INFO     | app.services.favorite_service | user=1096177957 записал избранное: Дурум
-2026-06-11 20:45:26 | INFO     | aiogram.event | Update id=249441445 is handled. Duration 348 ms by bot id=8691141264
-2026-06-11 20:45:30 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:45:30 | INFO     | app.repositories.food_repo | Загружено 2 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:45:30 | INFO     | aiogram.event | Update id=249441446 is handled. Duration 171 ms by bot id=8691141264
-2026-06-11 20:46:05 | INFO     | app.bot.routers.onboarding | user=1096177957 вызвал /start
-2026-06-11 20:46:05 | INFO     | aiogram.event | Update id=249441447 is handled. Duration 157 ms by bot id=8691141264
-2026-06-11 20:46:12 | INFO     | aiogram.event | Update id=249441448 is handled. Duration 196 ms by bot id=8691141264
-2026-06-11 20:46:22 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Бег 500ккал
-2026-06-11 20:46:22 | INFO     | app.llm.gemini | Разбор сообщения: Бег 500ккал
-2026-06-11 20:46:22 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 20:46:23 | INFO     | app.llm.gemini | Разбор: intent=workout, products=0, workout={'description': 'Бег', 'calories': 500.0}, date=None
-2026-06-11 20:46:23 | INFO     | app.repositories.workout_repo | Тренировка id=6a2ad84f50cacd1f081ea3ff user=1096177957: Бег 500 ккал
-2026-06-11 20:46:23 | INFO     | app.services.workout_service | user=1096177957 тренировка: Бег 500 ккал
-2026-06-11 20:46:24 | INFO     | aiogram.event | Update id=249441449 is handled. Duration 1279 ms by bot id=8691141264
-2026-06-11 20:46:34 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-11
-2026-06-11 20:46:34 | INFO     | app.repositories.food_repo | Загружено 2 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:46:34 | INFO     | aiogram.event | Update id=249441450 is handled. Duration 163 ms by bot id=8691141264
-2026-06-11 20:46:36 | INFO     | app.repositories.food_repo | Загружено 2 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:46:36 | INFO     | aiogram.event | Update id=249441451 is handled. Duration 441 ms by bot id=8691141264
-2026-06-11 20:46:38 | INFO     | app.repositories.food_repo | Загружено 2 записей для user=1096177957 за 2026-06-11
-2026-06-11 20:46:39 | INFO     | aiogram.event | Update id=249441452 is handled. Duration 294 ms by bot id=8691141264
-2026-06-11 21:01:04 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 21:01:04 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:01:04 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 21:01:05 | INFO     | __main__ | Приложение остановлено
-2026-06-11 21:02:03 | INFO     | __main__ | Запуск приложения
-2026-06-11 21:02:03 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 21:02:03 | INFO     | __main__ | MongoDB подключена
-2026-06-11 21:02:03 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 21:02:04 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:02:25 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 21:02:26 | INFO     | app.llm.gemini | Парсинг фото еды (102266 байт), подпись: None
-2026-06-11 21:02:26 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 21:02:28 | INFO     | app.llm.gemini | Фото: products=1, date=2026-06-11
-2026-06-11 21:02:28 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=2026-06-11
-2026-06-11 21:02:28 | INFO     | aiogram.event | Update id=249441453 is handled. Duration 3316 ms by bot id=8691141264
-2026-06-11 21:05:31 | INFO     | app.repositories.food_repo | Сохранена запись id=6a2adccbedcba541dae995da user=1096177957: Газированный напиток Sprite
-2026-06-11 21:05:31 | INFO     | app.services.food_service | user=1096177957 подтвердил 1 продуктов
-2026-06-11 21:05:32 | INFO     | aiogram.event | Update id=249441454 is handled. Duration 533 ms by bot id=8691141264
-2026-06-11 21:06:31 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 21:06:32 | INFO     | app.llm.gemini | Парсинг фото еды (91814 байт), подпись: None
-2026-06-11 21:06:32 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 21:06:34 | INFO     | app.llm.gemini | Фото: products=1, date=None
-2026-06-11 21:06:34 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=None
-2026-06-11 21:06:34 | INFO     | aiogram.event | Update id=249441455 is handled. Duration 3142 ms by bot id=8691141264
-2026-06-11 21:07:00 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 21:07:00 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:07:00 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 21:07:00 | INFO     | __main__ | Приложение остановлено
-2026-06-11 21:07:04 | INFO     | __main__ | Запуск приложения
-2026-06-11 21:07:04 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 21:07:04 | INFO     | __main__ | MongoDB подключена
-2026-06-11 21:07:04 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 21:07:04 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:07:07 | INFO     | app.services.food_service | user=1096177957 отменил pending
-2026-06-11 21:07:08 | INFO     | aiogram.event | Update id=249441456 is handled. Duration 726 ms by bot id=8691141264
-2026-06-11 21:07:22 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 21:07:22 | INFO     | app.services.barcode_service | Найден штрих-код: 54491069
-2026-06-11 21:07:23 | INFO     | app.clients.openfoodfacts | OFF: штрих-код 54491069 → не найден
-2026-06-11 21:07:23 | INFO     | app.llm.gemini | Парсинг фото еды (96104 байт), подпись: None
-2026-06-11 21:07:23 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 21:07:25 | INFO     | app.llm.gemini | Фото: products=1, date=None
-2026-06-11 21:07:25 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=None
-2026-06-11 21:07:25 | INFO     | aiogram.event | Update id=249441457 is handled. Duration 3781 ms by bot id=8691141264
-2026-06-11 21:13:37 | WARNING  | aiogram.dispatcher | Received SIGINT signal
-2026-06-11 21:13:37 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:13:37 | INFO     | aiogram.dispatcher | Polling stopped
-2026-06-11 21:13:37 | INFO     | __main__ | Приложение остановлено
-2026-06-11 21:13:40 | INFO     | __main__ | Запуск приложения
-2026-06-11 21:13:40 | INFO     | app.repositories.base | Индексы MongoDB проверены
-2026-06-11 21:13:40 | INFO     | __main__ | MongoDB подключена
-2026-06-11 21:13:41 | INFO     | aiogram.dispatcher | Start polling
-2026-06-11 21:13:41 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
-2026-06-11 21:13:50 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
-2026-06-11 21:13:51 | INFO     | app.services.barcode_service | Найден штрих-код: 54491069
-2026-06-11 21:13:52 | INFO     | app.clients.openfoodfacts | OFF: штрих-код 54491069 → sprite 500ml ethio (без КБЖУ)
-2026-06-11 21:13:52 | INFO     | app.llm.gemini | Парсинг еды: sprite 500ml ethio, 500 г
-2026-06-11 21:13:52 | INFO     | google_genai.models | AFC is enabled with max remote calls: 10.
-2026-06-11 21:13:53 | INFO     | app.llm.gemini | Еда: products=1, date=2026-06-11
-2026-06-11 21:13:53 | INFO     | aiogram.event | Update id=249441458 is handled. Duration 2871 ms by bot id=8691141264
+2026-06-21 23:15:02 | INFO     | __main__ | Запуск приложения
+2026-06-21 23:17:34 | INFO     | __main__ | Запуск приложения
+2026-06-21 23:18:02 | INFO     | __main__ | Запуск приложения
+2026-06-21 23:18:36 | INFO     | __main__ | Запуск приложения
+2026-06-21 23:18:36 | INFO     | app.repositories.base | Индексы MongoDB проверены
+2026-06-21 23:18:36 | INFO     | __main__ | MongoDB подключена
+2026-06-21 23:18:36 | INFO     | aiogram.dispatcher | Start polling
+2026-06-21 23:18:37 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
+2026-06-21 23:18:37 | INFO     | app.bot.routers.history | user=1096177957 запросил историю за 2026-06-21
+2026-06-21 23:18:37 | INFO     | app.repositories.food_repo | Загружено 0 записей для user=1096177957 за 2026-06-21
+2026-06-21 23:18:37 | INFO     | aiogram.event | Update id=249441470 is handled. Duration 382 ms by bot id=8691141264
+2026-06-21 23:18:50 | INFO     | app.repositories.profile_repo | Снимок сохранён для user=1096177957 за 2026-06-21
+2026-06-21 23:18:50 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Кушал еду курицу
+2026-06-21 23:18:50 | INFO     | app.llm.deepseek | Парсинг еды: Кушал еду курицу
+2026-06-21 23:18:52 | INFO     | httpx | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 402 Payment Required"
+2026-06-21 23:18:52 | WARNING  | app.llm.deepseek | DeepSeek ошибка: Error code: 402 - {'error': {'message': 'Insufficient Balance', 'type': 'unknown_error', 'param': None, 'code': 'invalid_request_error'}}
+2026-06-21 23:18:52 | INFO     | aiogram.event | Update id=249441471 is handled. Duration 2330 ms by bot id=8691141264
+2026-06-21 23:22:38 | WARNING  | aiogram.dispatcher | Received SIGINT signal
+2026-06-21 23:22:38 | INFO     | aiogram.dispatcher | Polling stopped for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
+2026-06-21 23:22:38 | INFO     | aiogram.dispatcher | Polling stopped
+2026-06-21 23:22:38 | INFO     | __main__ | Приложение остановлено
+2026-06-21 23:22:40 | INFO     | __main__ | Запуск приложения
+2026-06-21 23:22:40 | INFO     | app.repositories.base | Индексы MongoDB проверены
+2026-06-21 23:22:40 | INFO     | __main__ | MongoDB подключена
+2026-06-21 23:22:41 | INFO     | aiogram.dispatcher | Start polling
+2026-06-21 23:22:41 | INFO     | aiogram.dispatcher | Run polling for bot @ccaltracker_bot id=8691141264 - 'CALorie Tracker'
+2026-06-21 23:22:52 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Кушал еду курицу
+2026-06-21 23:22:53 | INFO     | app.llm.deepseek | Парсинг еды: Кушал еду курицу
+2026-06-21 23:22:54 | INFO     | httpx | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-06-21 23:22:56 | INFO     | app.llm.deepseek | Еда: products=1, date=None
+2026-06-21 23:22:56 | INFO     | aiogram.event | Update id=249441472 is handled. Duration 4031 ms by bot id=8691141264
+2026-06-21 23:23:06 | INFO     | app.services.food_service | user=1096177957 отменил pending
+2026-06-21 23:23:07 | INFO     | aiogram.event | Update id=249441473 is handled. Duration 261 ms by bot id=8691141264
+2026-06-21 23:23:19 | INFO     | app.bot.routers.food | user=1096177957 отправил текст: Скушал 200 гр курицы
+2026-06-21 23:23:20 | INFO     | app.llm.deepseek | Разбор сообщения: Скушал 200 гр курицы
+2026-06-21 23:23:20 | INFO     | httpx | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-06-21 23:23:23 | INFO     | app.llm.deepseek | Разбор: intent=food, products=1, workout=None, date=None
+2026-06-21 23:23:23 | INFO     | app.services.food_service | user=1096177957 pending продуктов: 1, date=None
+2026-06-21 23:23:23 | INFO     | aiogram.event | Update id=249441474 is handled. Duration 3358 ms by bot id=8691141264
+2026-06-21 23:24:24 | INFO     | app.bot.routers.food | user=1096177957 отправил фото, подпись: None
+2026-06-21 23:24:25 | INFO     | app.llm.deepseek | Парсинг фото еды (112022 байт), подпись: None
+2026-06-21 23:24:26 | INFO     | httpx | HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 400 Bad Request"
+2026-06-21 23:24:26 | WARNING  | app.llm.deepseek | DeepSeek ошибка: Error code: 400 - {'error': {'message': 'Failed to deserialize the JSON body into the target type: messages[0]: unknown variant `image_url`, expected `text` at line 1 column 151959', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}
+2026-06-21 23:24:26 | INFO     | aiogram.event | Update id=249441475 is handled. Duration 2371 ms by bot id=8691141264

@@ -8,7 +8,7 @@ dependencies = [
     "aiogram",
     "motor",
     "pydantic-settings",
-    "google-genai",
+    "openai",
     "zxing-cpp>=3.0.0",
     "pillow>=12.2.0",
 ]

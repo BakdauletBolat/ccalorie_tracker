@@ -6,7 +6,7 @@ from aiogram.types import BotCommand
 from app.bot.routers import all_routers
 from app.clients import OpenFoodFactsClient
 from app.config import settings
-from app.llm import GeminiParser
+from app.llm import DeepSeekParser
 from app.logger import setup_logging
 from app.repositories import (
     FavoriteRepository,
@@ -39,7 +39,7 @@ def build_dispatcher(
     stats_service: StatsService,
     favorite_service: FavoriteService,
     barcode_service: BarcodeService,
-    parser: GeminiParser,
+    parser: DeepSeekParser,
 ) -> Dispatcher:
     dp = Dispatcher()
     dp["food_service"] = food_service
@@ -74,7 +74,7 @@ async def main() -> None:
         stats_service=StatsService(foods, workouts, profiles),
         favorite_service=FavoriteService(favorites, foods),
         barcode_service=BarcodeService(OpenFoodFactsClient(), product_cache),
-        parser=GeminiParser(settings.GEMINI_API_KEY),
+        parser=DeepSeekParser(settings.DEEPSEEK_API_KEY),
     )
 
     bot = Bot(token=settings.TELEGRAM_TOKEN)

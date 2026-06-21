@@ -1,4 +1,4 @@
-from app.llm.gemini import GeminiParser
+from app.llm.deepseek import DeepSeekParser
 from app.llm.protocol import (
     FoodParser,
     ParsedFoodList,
@@ -9,8 +9,8 @@ from app.llm.protocol import (
 )
 
 __all__ = [
+    "DeepSeekParser",
     "FoodParser",
-    "GeminiParser",
     "ParsedFoodList",
     "ParsedMessage",
     "ParsedProduct",

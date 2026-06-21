@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     TELEGRAM_TOKEN: str
-    GEMINI_API_KEY: str
+    DEEPSEEK_API_KEY: str
     MONGO_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "food_tracker"
     DEFAULT_TZ: str = "Asia/Almaty"
